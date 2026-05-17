@@ -128,6 +128,7 @@ class AnalysisConfig:
     rate_limit_burst: int = 50
     rate_limit_window: int = 10
     html_output: str | None = None
+    pdf_output: bool = True
     json_output: bool = False
 
 
