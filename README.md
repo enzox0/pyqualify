@@ -1,26 +1,26 @@
-﻿# PyQualify â€” AI-Powered QA & Security Analysis Tool
+﻿# PyQualify - AI-Powered QA & Security Analysis Tool
 
 PyQualify is a command-line tool that performs automated quality assurance and security analysis across three modes: **Web**, **Code**, and **API**. It leverages LLM-based intelligence to classify findings, produce severity ratings, and generate actionable recommendations.
 
 ## Features
 
-- **Web Analysis** â€” Security headers, form CSRF detection, SEO completeness, accessibility compliance, performance signals, broken link detection
-- **Code Analysis** â€” Security vulnerabilities, bug risk detection, code quality metrics, test gap identification, dependency risk assessment
-- **API Analysis** â€” Authentication enforcement, response integrity, schema conformance, injection vector testing, rate limiting verification
-- **AI-Powered Classification** â€” Findings are processed through an LLM for intelligent severity assignment, CWE/OWASP mapping, and contextual recommendations
-- **Scoring & Grading** â€” Numeric score (0â€“100), letter grade (Aâ€“F), and risk level for every analysis run
-- **HTML Dashboard Reports** â€” Self-contained HTML reports with charts, filterable issue tables, and executive summaries
-- **Color-Coded CLI Output** â€” Severity-based coloring with graceful fallback for terminals without color support
-- **Hierarchical Configuration** â€” TOML config file, environment variables, and CLI arguments with clear precedence
-- **Interactive Config Editor** â€” Nano-like terminal editor for managing configuration
+- **Web Analysis** - Security headers, form CSRF detection, SEO completeness, accessibility compliance, performance signals, broken link detection
+- **Code Analysis** - Security vulnerabilities, bug risk detection, code quality metrics, test gap identification, dependency risk assessment
+- **API Analysis** - Authentication enforcement, response integrity, schema conformance, injection vector testing, rate limiting verification
+- **AI-Powered Classification** - Findings are processed through an LLM for intelligent severity assignment, CWE/OWASP mapping, and contextual recommendations
+- **Scoring & Grading** - Numeric score (0-100), letter grade (A-F), and risk level for every analysis run
+- **HTML Dashboard Reports** - Self-contained HTML reports with charts, filterable issue tables, and executive summaries
+- **Color-Coded CLI Output** - Severity-based coloring with graceful fallback for terminals without color support
+- **Hierarchical Configuration** - TOML config file, environment variables, and CLI arguments with clear precedence
+- **Interactive Config Editor** - Nano-like terminal editor for managing configuration
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) â€” used for Python version management, dependency locking, and running the project
+- [uv](https://docs.astral.sh/uv/) - used for Python version management, dependency locking, and running the project
 - An API key for one of the supported AI providers:
-  - **OpenAI** â€” GPT-4o, GPT-4-turbo, GPT-3.5-turbo, â€¦
-  - **Anthropic** â€” Claude 3.5 Sonnet, Claude 3 Opus, â€¦ (`uv add anthropic` required)
-  - **Google** â€” Gemini 2.0 Flash, Gemini 1.5 Pro, â€¦
+  - **OpenAI** - GPT-4o, GPT-4-turbo, GPT-3.5-turbo, ...
+  - **Anthropic** - Claude 3.5 Sonnet, Claude 3 Opus, ... (`uv add anthropic` required)
+  - **Google** - Gemini 2.0 Flash, Gemini 1.5 Pro, ...
 
 ## Installation
 
@@ -35,7 +35,7 @@ uv sync
 uv add anthropic
 ```
 
-## First Run â€” Setup
+## First Run - Setup
 
 Before running any analysis, configure your AI provider:
 
@@ -46,9 +46,9 @@ uv run PyQualify setup
 ```
   Select a provider:
 
-  1  OpenAI      GPT-4o, GPT-4-turbo, GPT-3.5-turbo, â€¦
-  2  Anthropic   Claude 3.5 Sonnet, Claude 3 Opus, â€¦
-  3  Google      Gemini 2.0 Flash, Gemini 1.5 Pro, â€¦
+  1  OpenAI      GPT-4o, GPT-4-turbo, GPT-3.5-turbo, ...
+  2  Anthropic   Claude 3.5 Sonnet, Claude 3 Opus, ...
+  3  Google      Gemini 2.0 Flash, Gemini 1.5 Pro, ...
 
   Provider [1/2/3]: 1
 
@@ -58,7 +58,7 @@ uv run PyQualify setup
   Model (default: gpt-4o)
   > 
 
-  âœ“ Configuration saved.
+  Configuration saved.
   Provider: OpenAI  |  Model: gpt-4o
 ```
 
@@ -90,7 +90,7 @@ uv run PyQualify         # interactive mode selector
 
   Output raw JSON to stdout? [y/N]:
 
-  â ¹ Analyzing web page...
+  Analyzing web page...
 ```
 
 You can also pass arguments directly for scripting:
@@ -155,7 +155,7 @@ retry_delay  = 2.0
 
 | Command | Description |
 |---------|-------------|
-| `PyQualify setup` | **Run first** â€” configure AI provider and API key |
+| `PyQualify setup` | **Run first** - configure AI provider and API key |
 | `PyQualify web <url>` | Analyze a web page |
 | `PyQualify code <path>` | Analyze source code (file or directory) |
 | `PyQualify api <base_url>` | Analyze API endpoints |
@@ -179,11 +179,11 @@ retry_delay  = 2.0
 
 Results are displayed with color-coded severity levels:
 
-- ðŸ”´ **CRITICAL** â€” Immediate action required
-- ðŸŸ  **HIGH** â€” Should be addressed soon
-- ðŸŸ¡ **MEDIUM** â€” Moderate risk
-- ðŸ”µ **LOW** â€” Minor improvement opportunity
-- âšª **INFO** â€” Informational finding
+- CRITICAL - Immediate action required
+- HIGH - Should be addressed soon
+- MEDIUM - Moderate risk
+- LOW - Minor improvement opportunity
+- INFO - Informational finding
 
 A summary block shows the overall Score, Grade, and Risk Level before individual issues.
 
@@ -238,30 +238,30 @@ The scoring algorithm starts at 100 and subtracts penalties per issue:
 | LOW | -2 |
 | INFO | 0 |
 
-The score is clamped to 0â€“100. Letter grades map as:
+The score is clamped to 0-100. Letter grades map as:
 
 | Grade | Score Range |
 |-------|-------------|
-| A | 90â€“100 |
-| B | 80â€“89 |
-| C | 70â€“79 |
-| D | 60â€“69 |
-| F | 0â€“59 |
+| A | 90-100 |
+| B | 80-89 |
+| C | 70-79 |
+| D | 60-69 |
+| F | 0-59 |
 
 ## Architecture
 
 PyQualify follows a layered pipeline architecture:
 
 ```
-CLI Layer â†’ Analysis Engine â†’ AI Engine â†’ Scoring â†’ Report Generator
+CLI Layer -> Analysis Engine -> AI Engine -> Scoring -> Report Generator
 ```
 
 Key design decisions:
 
-- **Dependency Injection** â€” Lightweight custom container for testability
-- **Protocol-based interfaces** â€” All major components implement Python protocols
-- **Async I/O** â€” `httpx.AsyncClient` for all network operations
-- **Modular analyzers** â€” Each analysis mode is an independent module
+- **Dependency Injection** - Lightweight custom container for testability
+- **Protocol-based interfaces** - All major components implement Python protocols
+- **Async I/O** - `httpx.AsyncClient` for all network operations
+- **Modular analyzers** - Each analysis mode is an independent module
 
 ## Development
 
@@ -289,34 +289,33 @@ uv lock
 
 ```
 PyQualify-tool/
-â”œâ”€â”€ pyproject.toml
-â”œâ”€â”€ uv.lock
-â”œâ”€â”€ README.md
-â”œâ”€â”€ PyQualify/
-â”‚   â”œâ”€â”€ __init__.py
-â”‚   â”œâ”€â”€ __main__.py
-â”‚   â”œâ”€â”€ models.py
-â”‚   â”œâ”€â”€ container.py
-â”‚   â”œâ”€â”€ utils.py
-â”‚   â”œâ”€â”€ cli/
-â”‚   â”œâ”€â”€ analyzers/
-â”‚   â”œâ”€â”€ ai/
-â”‚   â”œâ”€â”€ reporting/
-â”‚   â”œâ”€â”€ scoring/
-â”‚   â”œâ”€â”€ config/
-â”‚   â””â”€â”€ logging/
-â””â”€â”€ tests/
+    pyproject.toml
+    uv.lock
+    README.md
+    PyQualify/
+        __init__.py
+        __main__.py
+        models.py
+        container.py
+        utils.py
+        cli/
+        analyzers/
+        ai/
+        reporting/
+        scoring/
+        config/
+        logging/
+    tests/
 ```
 
 ## Dependencies
 
-- `click` â€” CLI framework
-- `httpx` â€” Async HTTP client
-- `beautifulsoup4` + `lxml` â€” HTML parsing
-- `openai` â€” LLM integration
-- `jinja2` â€” HTML template rendering
+- `click` - CLI framework
+- `httpx` - Async HTTP client
+- `beautifulsoup4` + `lxml` - HTML parsing
+- `openai` - LLM integration
+- `jinja2` - HTML template rendering
 
 ## License
 
 MIT
-
