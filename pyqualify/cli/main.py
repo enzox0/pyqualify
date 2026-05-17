@@ -22,13 +22,14 @@ from pyqualify.analyzers.api_analyzer import APIAnalyzer
 from pyqualify.analyzers.code_analyzer import CodeAnalyzer
 from pyqualify.analyzers.web_analyzer import WebAnalyzer
 from pyqualify.cli.progress import ProgressIndicator
-from pyqualify.cli.validators import validate_html_filename, validate_path, validate_url
+from pyqualify.cli.validators import validate_path, validate_url
 from pyqualify.config.manager import ConfigManager
 from pyqualify.container import Container
 from pyqualify.logging.logger import PyqualifyLogger
 from pyqualify.models import AIConfig, AnalysisConfig, LogConfig
 from pyqualify.reporting.cli_formatter import CLIFormatter
 from pyqualify.reporting.html_generator import HTMLDashboardGenerator
+from pyqualify.reporting.pdf_generator import PDFReportGenerator, resolve_pdf_path
 
 # -- Provider catalogue --------------------------------------------------------
 
@@ -36,6 +37,7 @@ _PROVIDERS = {
     "1": ("openai",    "OpenAI",    "GPT-4o, GPT-4-turbo, GPT-3.5-turbo, ..."),
     "2": ("anthropic", "Anthropic", "Claude 3.5 Sonnet, Claude 3 Opus, ..."),
     "3": ("google",    "Google",    "Gemini 2.0 Flash, Gemini 1.5 Pro, ..."),
+    "4": ("groq",      "Groq",      "Llama 3.3 70B, Mixtral 8x7B, ..."),
 }
 
 # -- Analysis mode catalogue ---------------------------------------------------
@@ -114,13 +116,13 @@ def _run_setup(config_manager: ConfigManager) -> None:
     while True:
         choice = click.prompt(
             click.style("  Provider", bold=True),
-            prompt_suffix=click.style(" [1/2/3] ", fg="bright_black"),
+            prompt_suffix=click.style(" [1/2/3/4] ", fg="bright_black"),
             default="1",
         ).strip()
         if choice in _PROVIDERS:
             provider_slug, provider_name, _ = _PROVIDERS[choice]
             break
-        click.echo(click.style("  ○ Please enter 1, 2, or 3.", fg="yellow"))
+        click.echo(click.style("  ○ Please enter 1, 2, 3, or 4.", fg="yellow"))
 
     defaults = _PROVIDER_DEFAULTS[provider_slug]
     default_model = defaults["model"]
@@ -237,34 +239,18 @@ def _prompt_target(mode: str) -> str:
             click.echo(click.style(f"  ○ {e.format_message()}", fg="yellow"))
 
 
-def _prompt_output_options() -> tuple[str | None, bool]:
-    """Prompt for optional HTML output path and JSON flag."""
+def _prompt_output_options() -> tuple[bool, bool]:
+    """Prompt for optional PDF save and JSON flag.
+
+    Returns:
+        (save_pdf, json_output)
+    """
     click.echo()
-    html_path: str | None = None
-    json_output = False
-
-    if click.confirm(
-        click.style("  Save HTML dashboard report?", fg="white", bold=True),
-        default=False,
-    ):
-        while True:
-            raw = click.prompt(
-                click.style("  HTML output filename", bold=True),
-                default="report.html",
-            ).strip()
-            try:
-                html_path = validate_html_filename(raw)
-                break
-            except click.BadParameter as e:
-                click.echo(click.style(f"  ○ {e.format_message()}", fg="yellow"))
-
-    if click.confirm(
-        click.style("  Output raw JSON to stdout?", fg="white", bold=True),
-        default=False,
-    ):
-        json_output = True
-
-    return html_path, json_output
+    save_pdf = click.confirm(
+        click.style("  Save PDF report to Documents/PyQualify/?", fg="white", bold=True),
+        default=True,
+    )
+    return save_pdf, False
 
 
 def _run_interactive() -> None:
@@ -276,14 +262,14 @@ def _run_interactive() -> None:
     try:
         mode = _prompt_mode()
         target = _prompt_target(mode)
-        html_path, json_output = _prompt_output_options()
+        save_pdf, json_output = _prompt_output_options()
 
         click.echo()
 
-        analysis_config = _resolve_analysis_config(config_manager, html_path, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
         container = _build_container(config_manager)
         formatter = container.resolve(CLIFormatter)
-        html_generator = container.resolve(HTMLDashboardGenerator)
+        pdf_generator = container.resolve(PDFReportGenerator)
 
         mode_labels = {"web": "web page", "code": "source code", "api": "API endpoints"}
         with ProgressIndicator(f"Analyzing {mode_labels[mode]}"):
@@ -295,17 +281,15 @@ def _run_interactive() -> None:
                 analyzer = container.resolve(APIAnalyzer)
             result = asyncio.run(analyzer.analyze(target, analysis_config))
 
-        if json_output:
-            click.echo(json.dumps(result.to_dict(), indent=2))
-        else:
-            formatter.generate_cli_output(result)
+        formatter.generate_cli_output(result)
 
-        if html_path:
-            html_generator.generate_html_report(result, html_path)
+        if save_pdf:
+            pdf_path = resolve_pdf_path(target)
+            pdf_generator.generate_pdf_report(result, pdf_path)
             click.echo(
                 "  " +
                 click.style("✔ ", fg="green", bold=True) +
-                click.style(f"HTML report saved to: {html_path}", fg="green"),
+                click.style(f"PDF report saved to: {pdf_path}", fg="green"),
                 err=True,
             )
 
@@ -377,8 +361,8 @@ def _build_container(config_manager: ConfigManager) -> Container:
     # Register CLIFormatter as singleton
     container.register_singleton(CLIFormatter, CLIFormatter)
 
-    # Register HTMLDashboardGenerator as singleton
-    container.register_singleton(HTMLDashboardGenerator, HTMLDashboardGenerator)
+    # Register PDFReportGenerator as singleton
+    container.register_singleton(PDFReportGenerator, PDFReportGenerator)
 
     # Register WebAnalyzer as transient (needs fresh http_client per run)
     def _create_web_analyzer() -> WebAnalyzer:
@@ -413,14 +397,14 @@ def _build_container(config_manager: ConfigManager) -> Container:
 
 def _resolve_analysis_config(
     config_manager: ConfigManager,
-    html: str | None,
+    pdf_output: bool,
     json_output: bool,
 ) -> AnalysisConfig:
     """Build an AnalysisConfig from config manager values and CLI options.
 
     Args:
         config_manager: The configuration manager.
-        html: Optional HTML output path from CLI.
+        pdf_output: Whether to save a PDF report.
         json_output: Whether to output raw JSON.
 
     Returns:
@@ -436,7 +420,7 @@ def _resolve_analysis_config(
         max_links=max_links,
         rate_limit_burst=rate_limit_burst,
         rate_limit_window=rate_limit_window,
-        html_output=html,
+        pdf_output=pdf_output,
         json_output=json_output,
     )
 
@@ -491,23 +475,21 @@ def setup() -> None:
 
 @cli.command()
 @click.argument("url")
-@click.option("--html", type=click.Path(), default=None, help="Output HTML report path")
+@click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
 @click.pass_context
-def web(ctx: click.Context, url: str, html: str | None, json_output: bool) -> None:
+def web(ctx: click.Context, url: str, save_pdf: bool, json_output: bool) -> None:
     """Analyze web page security, SEO, accessibility, and performance."""
     try:
         url = validate_url(url)
-        if html:
-            validate_html_filename(html)
 
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, html, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(WebAnalyzer)
         formatter = container.resolve(CLIFormatter)
-        html_generator = container.resolve(HTMLDashboardGenerator)
+        pdf_generator = container.resolve(PDFReportGenerator)
 
         with ProgressIndicator("Analyzing web page"):
             result = asyncio.run(analyzer.analyze(url, analysis_config))
@@ -517,12 +499,13 @@ def web(ctx: click.Context, url: str, html: str | None, json_output: bool) -> No
         else:
             formatter.generate_cli_output(result)
 
-        if html:
-            html_generator.generate_html_report(result, html)
+        if save_pdf:
+            pdf_path = resolve_pdf_path(url)
+            pdf_generator.generate_pdf_report(result, pdf_path)
             click.echo(
                 "  " +
                 click.style("✔ ", fg="green", bold=True) +
-                click.style(f"HTML report saved to: {html}", fg="green"),
+                click.style(f"PDF report saved to: {pdf_path}", fg="green"),
                 err=True,
             )
 
@@ -548,23 +531,21 @@ def web(ctx: click.Context, url: str, html: str | None, json_output: bool) -> No
 
 @cli.command()
 @click.argument("path")
-@click.option("--html", type=click.Path(), default=None, help="Output HTML report path")
+@click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
 @click.pass_context
-def code(ctx: click.Context, path: str, html: str | None, json_output: bool) -> None:
+def code(ctx: click.Context, path: str, save_pdf: bool, json_output: bool) -> None:
     """Analyze source code for security, quality, and test gaps."""
     try:
         path = validate_path(path)
-        if html:
-            validate_html_filename(html)
 
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, html, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(CodeAnalyzer)
         formatter = container.resolve(CLIFormatter)
-        html_generator = container.resolve(HTMLDashboardGenerator)
+        pdf_generator = container.resolve(PDFReportGenerator)
 
         with ProgressIndicator("Analyzing source code"):
             result = asyncio.run(analyzer.analyze(path, analysis_config))
@@ -574,12 +555,13 @@ def code(ctx: click.Context, path: str, html: str | None, json_output: bool) -> 
         else:
             formatter.generate_cli_output(result)
 
-        if html:
-            html_generator.generate_html_report(result, html)
+        if save_pdf:
+            pdf_path = resolve_pdf_path(path)
+            pdf_generator.generate_pdf_report(result, pdf_path)
             click.echo(
                 "  " +
                 click.style("✔ ", fg="green", bold=True) +
-                click.style(f"HTML report saved to: {html}", fg="green"),
+                click.style(f"PDF report saved to: {pdf_path}", fg="green"),
                 err=True,
             )
 
@@ -605,23 +587,21 @@ def code(ctx: click.Context, path: str, html: str | None, json_output: bool) -> 
 
 @cli.command()
 @click.argument("base_url")
-@click.option("--html", type=click.Path(), default=None, help="Output HTML report path")
+@click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
 @click.pass_context
-def api(ctx: click.Context, base_url: str, html: str | None, json_output: bool) -> None:
+def api(ctx: click.Context, base_url: str, save_pdf: bool, json_output: bool) -> None:
     """Analyze API endpoints for security and integrity."""
     try:
         base_url = validate_url(base_url)
-        if html:
-            validate_html_filename(html)
 
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, html, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(APIAnalyzer)
         formatter = container.resolve(CLIFormatter)
-        html_generator = container.resolve(HTMLDashboardGenerator)
+        pdf_generator = container.resolve(PDFReportGenerator)
 
         with ProgressIndicator("Analyzing API endpoints"):
             result = asyncio.run(analyzer.analyze(base_url, analysis_config))
@@ -631,12 +611,13 @@ def api(ctx: click.Context, base_url: str, html: str | None, json_output: bool) 
         else:
             formatter.generate_cli_output(result)
 
-        if html:
-            html_generator.generate_html_report(result, html)
+        if save_pdf:
+            pdf_path = resolve_pdf_path(base_url)
+            pdf_generator.generate_pdf_report(result, pdf_path)
             click.echo(
                 "  " +
                 click.style("✔ ", fg="green", bold=True) +
-                click.style(f"HTML report saved to: {html}", fg="green"),
+                click.style(f"PDF report saved to: {pdf_path}", fg="green"),
                 err=True,
             )
 
