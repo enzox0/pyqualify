@@ -10,9 +10,9 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability in QAAI, please report it responsibly:
+If you discover a security vulnerability in PyQualify, please report it responsibly:
 
-1. Open a [GitHub Security Advisory](https://github.com/enzox0/qaai-tool/security/advisories/new) (preferred)
+1. Open a [GitHub Security Advisory](https://github.com/enzox0/pyqualify/security/advisories/new) (preferred)
 2. Or email the maintainers directly with a description of the issue
 
 Please include:
@@ -22,9 +22,9 @@ Please include:
 
 You can expect an acknowledgement within 48 hours and a resolution timeline within 7 days for critical issues.
 
-## Security Considerations When Using QAAI
+## Security Considerations When Using PyQualify
 
-- **API keys** — QAAI stores your API key in `~/.qaai/config.toml` with owner-only permissions (`0600`). Never commit this file.
+- **API keys** — PyQualify stores your API key in `~/.pyqualify/config.toml` with owner-only permissions (`0600`). Never commit this file.
 - **`.env.example`** — The provided example file contains no real secrets. Copy it to `.env` and fill in your values; `.env` is listed in `.gitignore`.
-- **Analysis targets** — QAAI makes HTTP requests to the URLs and APIs you provide. Only analyze targets you own or have explicit permission to test.
+- **Analysis targets** — PyQualify makes HTTP requests to the URLs and APIs you provide. Only analyze targets you own or have explicit permission to test.
 - **HTML reports** — Generated reports may contain excerpts of the analyzed content. Treat them as sensitive if the target is sensitive.

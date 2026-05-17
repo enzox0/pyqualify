@@ -1,12 +1,12 @@
-# Contributing to QAAI
+# Contributing to PyQualify
 
 Thank you for your interest in contributing. Here's how to get started.
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/enzox0/qaai-tool
-cd qaai-tool
+git clone https://github.com/enzox0/pyqualify
+cd pyqualify
 
 # Install all dependencies including dev tools
 uv sync --extra dev
@@ -19,7 +19,7 @@ uv sync --extra dev
 uv run pytest
 
 # Run with coverage
-uv run pytest --cov=qaai --cov-report=term-missing
+uv run pytest --cov=pyqualify --cov-report=term-missing
 
 # Run a specific test file
 uv run pytest tests/test_scoring_engine.py -v
@@ -58,7 +58,7 @@ Open an issue with:
 - A clear description of the problem
 - Steps to reproduce
 - Expected vs actual behavior
-- Your OS, Python version, and `uv run qaai --version` output
+- Your OS, Python version, and `uv run pyqualify --version` output
 
 ## Security Issues
 
