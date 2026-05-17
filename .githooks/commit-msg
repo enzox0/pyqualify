@@ -1,0 +1,28 @@
+#!/bin/sh
+# commit-msg: enforces the Conventional Commits format
+# Valid types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Allow merge commits and fixup commits through unchanged
+echo "$COMMIT_MSG" | grep -qE "^(Merge|Revert|fixup!|squash!)" && exit 0
+
+PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .{1,100}$"
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo ""
+    echo "[commit-msg] ERROR: Commit message does not follow Conventional Commits format."
+    echo ""
+    echo "  Expected format:  <type>(<scope>): <description>"
+    echo "  Example:          feat: add scoring engine"
+    echo "  Example:          fix(cli): handle missing config file"
+    echo ""
+    echo "  Valid types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+    echo ""
+    echo "  Your message: $COMMIT_MSG"
+    echo ""
+    exit 1
+fi
+
+echo "[commit-msg] Commit message format OK."

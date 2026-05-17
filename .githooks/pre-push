@@ -1,0 +1,25 @@
+#!/bin/sh
+# pre-push: runs before git push
+# Checks: full test suite with coverage, and blocks direct pushes to main/master
+
+REMOTE="$1"
+URL="$2"
+
+CURRENT_BRANCH=$(git symbolic-ref HEAD 2>/dev/null | sed 's|refs/heads/||')
+
+# Block direct pushes to protected branches
+if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+    echo ""
+    echo "[pre-push] ERROR: Direct push to '$CURRENT_BRANCH' is not allowed."
+    echo "  Please open a pull request instead."
+    echo ""
+    exit 1
+fi
+
+echo "[pre-push] Running full test suite with coverage..."
+uv run pytest --cov=pyqualify --cov-report=term-missing --tb=short -q || {
+    echo "[pre-push] Tests failed. Push aborted."
+    exit 1
+}
+
+echo "[pre-push] All checks passed. Pushing to $REMOTE ($URL)..."

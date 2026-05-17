@@ -1,0 +1,25 @@
+#!/bin/sh
+# prepare-commit-msg: prepopulates the commit message editor with a helpful template
+# Only applies to regular commits (not merges, squashes, or amends)
+
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="$2"
+
+# Only inject template for blank commits (no -m flag, not a merge/squash)
+if [ -z "$COMMIT_SOURCE" ]; then
+    # Prepend the template before any existing content
+    EXISTING=$(cat "$COMMIT_MSG_FILE")
+    cat > "$COMMIT_MSG_FILE" <<'TEMPLATE'
+# <type>(<scope>): <short description>  [max 100 chars]
+#
+# Types: feat | fix | docs | style | refactor | test | chore | perf | ci | build | revert
+#
+# Body (optional): explain *what* and *why*, not *how*
+#
+# Footer (optional):
+#   Closes #<issue-number>
+#   BREAKING CHANGE: <description>
+#
+TEMPLATE
+    printf "%s" "$EXISTING" >> "$COMMIT_MSG_FILE"
+fi

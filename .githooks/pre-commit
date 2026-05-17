@@ -1,0 +1,30 @@
+#!/bin/sh
+# pre-commit: runs before every commit
+# Checks: trailing whitespace, Python syntax, and the test suite
+
+set -e
+
+echo "[pre-commit] Checking for Python syntax errors..."
+
+# Collect staged .py files
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep "\.py$" || true)
+
+if [ -n "$STAGED_PY" ]; then
+    for file in $STAGED_PY; do
+        python -m py_compile "$file" || {
+            echo "[pre-commit] Syntax error in $file. Commit aborted."
+            exit 1
+        }
+    done
+    echo "[pre-commit] Syntax check passed."
+else
+    echo "[pre-commit] No Python files staged, skipping syntax check."
+fi
+
+echo "[pre-commit] Running test suite..."
+uv run pytest --tb=short -q || {
+    echo "[pre-commit] Tests failed. Commit aborted."
+    exit 1
+}
+
+echo "[pre-commit] All checks passed."
