@@ -1,0 +1,219 @@
+"""CLI output formatter for PyQualify analysis results."""
+
+import sys
+import threading
+import time
+from itertools import cycle
+
+import click
+
+from pyqualify.models import AnalysisResult, Issue, Severity
+
+
+class CLIFormatter:
+    """Formats analysis results for terminal display.
+
+    Implements ReportGeneratorProtocol for CLI output with color-coded
+    severity levels and a progress spinner during analysis.
+    """
+
+    SEVERITY_COLORS: dict[str, str] = {
+        "critical": "red",
+        "high": "bright_red",
+        "medium": "yellow",
+        "low": "blue",
+        "info": "bright_black",  # gray
+    }
+
+    SEVERITY_ORDER: list[str] = ["critical", "high", "medium", "low", "info"]
+
+    SPINNER_FRAMES: list[str] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self) -> None:
+        self._spinner_active: bool = False
+        self._spinner_thread: threading.Thread | None = None
+
+    def generate_cli_output(self, result: AnalysisResult, use_color: bool = True) -> None:
+        """Display results in the terminal with color coding.
+
+        Args:
+            result: The complete analysis result to display.
+            use_color: Whether to use color-coded output. Falls back to
+                plain text with severity prefixes when False.
+        """
+        self._display_summary(result, use_color)
+        self._display_issues(result.issues, use_color)
+
+    def generate_html_report(self, result: AnalysisResult, output_path: str) -> None:
+        """Generate HTML report. Delegates to HTMLDashboardGenerator.
+
+        Raises:
+            NotImplementedError: CLI formatter does not generate HTML reports.
+        """
+        raise NotImplementedError(
+            "CLIFormatter does not support HTML report generation. "
+            "Use HTMLDashboardGenerator instead."
+        )
+
+    def _display_summary(self, result: AnalysisResult, use_color: bool) -> None:
+        """Display the summary block with Score, Grade, and Risk Level."""
+        separator = "═" * 50
+
+        if use_color:
+            click.echo(click.style(separator, fg="bright_black"))
+            click.echo(click.style("  PyQualify Analysis Summary", fg="white", bold=True))
+            click.echo(click.style(separator, fg="bright_black"))
+            click.echo(
+                f"  Score:      {click.style(str(result.score), fg=self._score_color(result.score), bold=True)}/100"
+            )
+            click.echo(
+                f"  Grade:      {click.style(result.grade, fg=self._grade_color(result.grade), bold=True)}"
+            )
+            click.echo(
+                f"  Risk Level: {click.style(result.risk_level.value.upper(), fg=self._risk_color(result.risk_level.value), bold=True)}"
+            )
+            click.echo(click.style(separator, fg="bright_black"))
+            click.echo()
+        else:
+            click.echo(separator)
+            click.echo("  PyQualify Analysis Summary")
+            click.echo(separator)
+            click.echo(f"  Score:      {result.score}/100")
+            click.echo(f"  Grade:      {result.grade}")
+            click.echo(f"  Risk Level: {result.risk_level.value.upper()}")
+            click.echo(separator)
+            click.echo()
+
+    def _display_issues(self, issues: list[Issue], use_color: bool) -> None:
+        """Display issues ordered from highest to lowest severity."""
+        sorted_issues = sorted(
+            issues,
+            key=lambda issue: self.SEVERITY_ORDER.index(issue.severity.value),
+        )
+
+        if not sorted_issues:
+            if use_color:
+                click.echo(click.style("  No issues found.", fg="green", bold=True))
+            else:
+                click.echo("  No issues found.")
+            return
+
+        issue_count = len(sorted_issues)
+        if use_color:
+            click.echo(
+                click.style(f"  Issues Found: {issue_count}", fg="white", bold=True)
+            )
+        else:
+            click.echo(f"  Issues Found: {issue_count}")
+        click.echo()
+
+        for i, issue in enumerate(sorted_issues, 1):
+            self._display_issue(issue, i, use_color)
+
+    def _display_issue(self, issue: Issue, index: int, use_color: bool) -> None:
+        """Display a single issue with appropriate formatting."""
+        severity_value = issue.severity.value
+
+        if use_color:
+            color = self.SEVERITY_COLORS.get(severity_value, "white")
+            severity_label = click.style(
+                severity_value.upper(), fg=color, bold=True
+            )
+            click.echo(f"  {index}. [{severity_label}] {issue.title}")
+            click.echo(
+                click.style(f"     Check: {issue.check}", fg="bright_black")
+            )
+            if issue.description:
+                click.echo(f"     {issue.description}")
+            if issue.recommendation:
+                click.echo(
+                    click.style(f"     → {issue.recommendation}", fg="cyan")
+                )
+            if issue.cwe:
+                click.echo(
+                    click.style(f"     CWE: {issue.cwe}", fg="bright_black")
+                )
+            if issue.owasp:
+                click.echo(
+                    click.style(f"     OWASP: {issue.owasp}", fg="bright_black")
+                )
+        else:
+            severity_prefix = f"[{severity_value.upper()}]"
+            click.echo(f"  {index}. {severity_prefix} {issue.title}")
+            click.echo(f"     Check: {issue.check}")
+            if issue.description:
+                click.echo(f"     {issue.description}")
+            if issue.recommendation:
+                click.echo(f"     -> {issue.recommendation}")
+            if issue.cwe:
+                click.echo(f"     CWE: {issue.cwe}")
+            if issue.owasp:
+                click.echo(f"     OWASP: {issue.owasp}")
+
+        click.echo()
+
+    def start_progress(self, message: str = "Analyzing") -> None:
+        """Start the progress spinner indicator.
+
+        The spinner updates at least once per second and runs in a
+        background thread until stop_progress() is called.
+
+        Args:
+            message: The message to display alongside the spinner.
+        """
+        self._spinner_active = True
+        self._spinner_thread = threading.Thread(
+            target=self._run_spinner, args=(message,), daemon=True
+        )
+        self._spinner_thread.start()
+
+    def stop_progress(self) -> None:
+        """Stop the progress spinner indicator."""
+        self._spinner_active = False
+        if self._spinner_thread is not None:
+            self._spinner_thread.join(timeout=2.0)
+            self._spinner_thread = None
+        # Clear the spinner line
+        sys.stderr.write("\r" + " " * 60 + "\r")
+        sys.stderr.flush()
+
+    def _run_spinner(self, message: str) -> None:
+        """Run the spinner animation in a background thread."""
+        spinner = cycle(self.SPINNER_FRAMES)
+        while self._spinner_active:
+            frame = next(spinner)
+            sys.stderr.write(f"\r  {frame} {message}...")
+            sys.stderr.flush()
+            time.sleep(0.1)  # Updates ~10 times per second (well above 1/sec requirement)
+
+    def _score_color(self, score: int) -> str:
+        """Get color for the score value."""
+        if score >= 90:
+            return "green"
+        elif score >= 70:
+            return "yellow"
+        elif score >= 50:
+            return "bright_red"
+        else:
+            return "red"
+
+    def _grade_color(self, grade: str) -> str:
+        """Get color for the grade value."""
+        grade_colors = {
+            "A": "green",
+            "B": "cyan",
+            "C": "yellow",
+            "D": "bright_red",
+            "F": "red",
+        }
+        return grade_colors.get(grade, "white")
+
+    def _risk_color(self, risk_level: str) -> str:
+        """Get color for the risk level."""
+        risk_colors = {
+            "critical": "red",
+            "high": "bright_red",
+            "medium": "yellow",
+            "low": "blue",
+        }
+        return risk_colors.get(risk_level, "white")
