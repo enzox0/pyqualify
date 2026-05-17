@@ -5,7 +5,6 @@ during long-running async analysis operations, integrating with
 click's terminal output.
 """
 
-import sys
 import threading
 import time
 from itertools import cycle
@@ -87,5 +86,8 @@ class ProgressIndicator:
         spinner = cycle(self.SPINNER_FRAMES)
         while self._active:
             frame = next(spinner)
-            click.echo(f"\r  {frame} {self._message}", nl=False, err=True)
+            # Spinner uses cyan to match the banner's primary brand color
+            styled_frame = click.style(frame, fg="cyan")
+            styled_msg = click.style(self._message, fg="bright_black")
+            click.echo(f"\r  {styled_frame} {styled_msg}", nl=False, err=True)
             time.sleep(self._update_interval)

@@ -10,6 +10,7 @@ collects the required provider and API key before proceeding.
 
 import asyncio
 import json
+import os
 import sys
 
 import click
@@ -48,6 +49,9 @@ _MODES = {
 # -- Banner --------------------------------------------------------------------
 
 def _print_banner(config_manager: "ConfigManager | None" = None) -> None:
+    # Clear the terminal before drawing the banner
+    os.system("cls" if os.name == "nt" else "clear")
+
     banner = r"""
 ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ██╗     ██╗███████╗██╗   ██╗
 ██╔══██╗╚██╗ ██╔╝██╔═══██╗██║   ██║██╔══██╗██║     ██║██╔════╝╚██╗ ██╔╝
@@ -70,10 +74,9 @@ def _print_banner(config_manager: "ConfigManager | None" = None) -> None:
     if config_manager is not None:
         provider = config_manager.get("provider", "openai")
         defaults = _PROVIDER_DEFAULTS.get(provider, _PROVIDER_DEFAULTS["openai"])
-        engine_str = config_manager.get("model") or defaults["model"]
         is_configured = config_manager.is_configured()
+        engine_str = (config_manager.get("model") or defaults["model"]) if is_configured else "not configured"
     else:
-        # No config available yet (e.g. first-run banner before setup)
         engine_str = "not configured"
         is_configured = False
 
@@ -96,7 +99,8 @@ def _print_banner(config_manager: "ConfigManager | None" = None) -> None:
 
 def _run_setup(config_manager: ConfigManager) -> None:
     """Interactive setup wizard - collects provider, API key, and model."""
-    click.echo(click.style("  Setup - configure your AI provider\n", bold=True))
+    click.echo(click.style("  Setup", fg="white", bold=True) +
+               click.style("  configure your AI provider\n", fg="bright_black"))
     click.echo(click.style("  Choose a provider:\n", fg="bright_black"))
 
     for key, (slug, name, models) in _PROVIDERS.items():
@@ -110,13 +114,13 @@ def _run_setup(config_manager: ConfigManager) -> None:
     while True:
         choice = click.prompt(
             click.style("  Provider", bold=True),
-            prompt_suffix=" [1/2/3] ",
+            prompt_suffix=click.style(" [1/2/3] ", fg="bright_black"),
             default="1",
         ).strip()
         if choice in _PROVIDERS:
             provider_slug, provider_name, _ = _PROVIDERS[choice]
             break
-        click.echo(click.style("  Please enter 1, 2, or 3.", fg="yellow"))
+        click.echo(click.style("  ○ Please enter 1, 2, or 3.", fg="yellow"))
 
     defaults = _PROVIDER_DEFAULTS[provider_slug]
     default_model = defaults["model"]
@@ -130,13 +134,15 @@ def _run_setup(config_manager: ConfigManager) -> None:
         show_default=False,
     ).strip()
     if not api_key:
-        click.echo(click.style("  API key cannot be empty. Setup cancelled.", fg="red"))
+        click.echo(
+            click.style("  ✖ API key cannot be empty. Setup cancelled.", fg="red")
+        )
         sys.exit(1)
 
     click.echo()
     model = click.prompt(
         click.style("  Model", bold=True),
-        prompt_suffix=f" (default: {default_model})\n  > ",
+        prompt_suffix=click.style(f" (default: {default_model})", fg="bright_black") + "\n  > ",
         default=default_model,
         show_default=False,
     ).strip() or default_model
@@ -148,13 +154,16 @@ def _run_setup(config_manager: ConfigManager) -> None:
 
     click.echo()
     click.echo(
-        click.style("  Configuration saved.", fg="green", bold=True)
+        "  " +
+        click.style("✔ ", fg="green", bold=True) +
+        click.style("Configuration saved.", fg="green", bold=True)
     )
     click.echo(
-        click.style(
-            f"  Provider: {provider_name}  |  Model: {model}\n",
-            fg="bright_black",
-        )
+        "  " +
+        click.style("provider   ", fg="bright_black") +
+        click.style(provider_name, fg="cyan") +
+        click.style("  model   ", fg="bright_black") +
+        click.style(model + "\n", fg="cyan")
     )
 
 def _ensure_configured(config_manager: ConfigManager) -> None:
@@ -162,20 +171,25 @@ def _ensure_configured(config_manager: ConfigManager) -> None:
     if not config_manager.is_configured():
         _print_banner(config_manager)
         click.echo(
-            click.style(
-                "  QAAI is not configured yet.\n"
-                "  Run the setup wizard to get started:\n",
-                fg="yellow",
-            )
+            "  " +
+            click.style("○ ", fg="yellow") +
+            click.style("PyQualify is not configured yet.\n", fg="yellow")
         )
-        click.echo(click.style("    uv run pyqualify setup\n", bold=True))
+        click.echo(
+            click.style("  Run the setup wizard to get started:\n", fg="bright_black")
+        )
+        click.echo(
+            "  " +
+            click.style("uv run pyqualify setup", fg="cyan", bold=True) +
+            "\n"
+        )
         sys.exit(1)
 
 # -- Interactive analysis menu -------------------------------------------------
 
 def _prompt_mode() -> str:
     """Prompt the user to select an analysis mode. Returns 'web', 'code', or 'api'."""
-    click.echo(click.style("  Select analysis mode:\n", bold=True))
+    click.echo(click.style("  Select analysis mode:\n", fg="white", bold=True))
     for key, (name, desc) in _MODES.items():
         click.echo(
             f"  {click.style(key, fg='cyan', bold=True)}  "
@@ -187,32 +201,32 @@ def _prompt_mode() -> str:
     while True:
         choice = click.prompt(
             click.style("  Mode", bold=True),
-            prompt_suffix=" [1/2/3] ",
+            prompt_suffix=click.style(" [1/2/3] ", fg="bright_black"),
             default="1",
         ).strip()
         if choice in _MODES:
             return _MODES[choice][0].lower()
-        click.echo(click.style("  Please enter 1, 2, or 3.", fg="yellow"))
+        click.echo(click.style("  ○ Please enter 1, 2, or 3.", fg="yellow"))
 
 
 def _prompt_target(mode: str) -> str:
     """Prompt for the analysis target appropriate to the mode."""
     prompts = {
-        "web": ("  Target URL", "https://example.com"),
+        "web":  ("  Target URL",              "https://example.com"),
         "code": ("  Path to file or directory", "./src"),
-        "api": ("  API base URL", "https://api.example.com"),
+        "api":  ("  API base URL",             "https://api.example.com"),
     }
     label, placeholder = prompts[mode]
     click.echo()
     while True:
         target = click.prompt(
             click.style(label, bold=True),
-            prompt_suffix=f" (e.g. {placeholder})\n  > ",
+            prompt_suffix=click.style(f" (e.g. {placeholder})", fg="bright_black") + "\n  > ",
             default="",
             show_default=False,
         ).strip()
         if not target:
-            click.echo(click.style("  Target cannot be empty.", fg="yellow"))
+            click.echo(click.style("  ○ Target cannot be empty.", fg="yellow"))
             continue
         try:
             if mode in ("web", "api"):
@@ -220,7 +234,7 @@ def _prompt_target(mode: str) -> str:
             else:
                 return validate_path(target)
         except click.BadParameter as e:
-            click.echo(click.style(f"  {e.format_message()}", fg="yellow"))
+            click.echo(click.style(f"  ○ {e.format_message()}", fg="yellow"))
 
 
 def _prompt_output_options() -> tuple[str | None, bool]:
@@ -230,7 +244,7 @@ def _prompt_output_options() -> tuple[str | None, bool]:
     json_output = False
 
     if click.confirm(
-        click.style("  Save HTML dashboard report?", bold=True),
+        click.style("  Save HTML dashboard report?", fg="white", bold=True),
         default=False,
     ):
         while True:
@@ -242,10 +256,10 @@ def _prompt_output_options() -> tuple[str | None, bool]:
                 html_path = validate_html_filename(raw)
                 break
             except click.BadParameter as e:
-                click.echo(click.style(f"  {e.format_message()}", fg="yellow"))
+                click.echo(click.style(f"  ○ {e.format_message()}", fg="yellow"))
 
     if click.confirm(
-        click.style("  Output raw JSON to stdout?", bold=True),
+        click.style("  Output raw JSON to stdout?", fg="white", bold=True),
         default=False,
     ):
         json_output = True
@@ -258,17 +272,6 @@ def _run_interactive() -> None:
     config_manager = ConfigManager()
     _ensure_configured(config_manager)
     _print_banner(config_manager)
-
-    # Show current provider/model in header
-    provider = config_manager.get("provider", "openai")
-    model = config_manager.get("model", "")
-    provider_names = {"openai": "OpenAI", "anthropic": "Anthropic", "google": "Google"}
-    click.echo(
-        click.style(
-            f"  Provider: {provider_names.get(provider, provider)}  |  Model: {model or '(default)'}\n",
-            fg="bright_black",
-        )
-    )
 
     try:
         mode = _prompt_mode()
@@ -300,18 +303,29 @@ def _run_interactive() -> None:
         if html_path:
             html_generator.generate_html_report(result, html_path)
             click.echo(
-                click.style(f"\n  HTML report saved to: {html_path}", fg="green"),
+                "  " +
+                click.style("✔ ", fg="green", bold=True) +
+                click.style(f"HTML report saved to: {html_path}", fg="green"),
                 err=True,
             )
 
     except KeyboardInterrupt:
-        click.echo(click.style("\n\n  Cancelled.", fg="yellow"), err=True)
+        click.echo(
+            "\n\n  " + click.style("○ Cancelled.", fg="yellow"),
+            err=True,
+        )
         sys.exit(130)
     except click.BadParameter as e:
-        click.echo(click.style(f"\n  Error: {e.format_message()}", fg="red"), err=True)
+        click.echo(
+            "\n  " + click.style(f"✖ {e.format_message()}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
     except Exception as e:
-        click.echo(click.style(f"\n  Error: {e}", fg="red"), err=True)
+        click.echo(
+            "\n  " + click.style(f"✖ {e}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
 
 
@@ -451,21 +465,27 @@ def setup() -> None:
         model = config_manager.get("model", "")
         provider_names = {"openai": "OpenAI", "anthropic": "Anthropic", "google": "Google"}
         click.echo(
-            click.style(
-                f"  Current config: {provider_names.get(provider, provider)} / {model or '(default)'}\n",
-                fg="bright_black",
-            )
+            "  " +
+            click.style("provider   ", fg="bright_black") +
+            click.style(provider_names.get(provider, provider), fg="cyan") +
+            click.style("  model   ", fg="bright_black") +
+            click.style(model or "(default)", fg="cyan") +
+            "\n"
         )
         if not click.confirm(
-            click.style("  Reconfigure?", bold=True), default=False
+            click.style("  Reconfigure?", fg="white", bold=True), default=False
         ):
-            click.echo(click.style("  No changes made.", fg="bright_black"))
+            click.echo(
+                "  " + click.style("○ No changes made.", fg="bright_black")
+            )
             return
         click.echo()
     try:
         _run_setup(config_manager)
     except KeyboardInterrupt:
-        click.echo(click.style("\n\n  Setup cancelled.", fg="yellow"))
+        click.echo(
+            "\n\n  " + click.style("○ Setup cancelled.", fg="yellow")
+        )
         sys.exit(130)
 
 
@@ -477,44 +497,52 @@ def setup() -> None:
 def web(ctx: click.Context, url: str, html: str | None, json_output: bool) -> None:
     """Analyze web page security, SEO, accessibility, and performance."""
     try:
-        # Validate inputs
         url = validate_url(url)
         if html:
             validate_html_filename(html)
 
-        # Build DI container
         config_manager = ConfigManager()
         analysis_config = _resolve_analysis_config(config_manager, html, json_output)
         container = _build_container(config_manager)
 
-        # Resolve dependencies
         analyzer = container.resolve(WebAnalyzer)
         formatter = container.resolve(CLIFormatter)
         html_generator = container.resolve(HTMLDashboardGenerator)
 
-        # Run analysis with progress indicator
         with ProgressIndicator("Analyzing web page"):
             result = asyncio.run(analyzer.analyze(url, analysis_config))
 
-        # Output results
         if json_output:
             click.echo(json.dumps(result.to_dict(), indent=2))
         else:
             formatter.generate_cli_output(result)
 
-        # Generate HTML report if requested
         if html:
             html_generator.generate_html_report(result, html)
-            click.echo(f"\nHTML report saved to: {html}", err=True)
+            click.echo(
+                "  " +
+                click.style("✔ ", fg="green", bold=True) +
+                click.style(f"HTML report saved to: {html}", fg="green"),
+                err=True,
+            )
 
     except click.BadParameter as e:
-        click.echo(f"Error: {e.format_message()}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e.format_message()}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
     except KeyboardInterrupt:
-        click.echo("\nAnalysis interrupted.", err=True)
+        click.echo(
+            "\n  " + click.style("○ Analysis interrupted.", fg="yellow"),
+            err=True,
+        )
         sys.exit(130)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
 
 
@@ -526,44 +554,52 @@ def web(ctx: click.Context, url: str, html: str | None, json_output: bool) -> No
 def code(ctx: click.Context, path: str, html: str | None, json_output: bool) -> None:
     """Analyze source code for security, quality, and test gaps."""
     try:
-        # Validate inputs
         path = validate_path(path)
         if html:
             validate_html_filename(html)
 
-        # Build DI container
         config_manager = ConfigManager()
         analysis_config = _resolve_analysis_config(config_manager, html, json_output)
         container = _build_container(config_manager)
 
-        # Resolve dependencies
         analyzer = container.resolve(CodeAnalyzer)
         formatter = container.resolve(CLIFormatter)
         html_generator = container.resolve(HTMLDashboardGenerator)
 
-        # Run analysis with progress indicator
         with ProgressIndicator("Analyzing source code"):
             result = asyncio.run(analyzer.analyze(path, analysis_config))
 
-        # Output results
         if json_output:
             click.echo(json.dumps(result.to_dict(), indent=2))
         else:
             formatter.generate_cli_output(result)
 
-        # Generate HTML report if requested
         if html:
             html_generator.generate_html_report(result, html)
-            click.echo(f"\nHTML report saved to: {html}", err=True)
+            click.echo(
+                "  " +
+                click.style("✔ ", fg="green", bold=True) +
+                click.style(f"HTML report saved to: {html}", fg="green"),
+                err=True,
+            )
 
     except click.BadParameter as e:
-        click.echo(f"Error: {e.format_message()}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e.format_message()}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
     except KeyboardInterrupt:
-        click.echo("\nAnalysis interrupted.", err=True)
+        click.echo(
+            "\n  " + click.style("○ Analysis interrupted.", fg="yellow"),
+            err=True,
+        )
         sys.exit(130)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
 
 
@@ -575,44 +611,52 @@ def code(ctx: click.Context, path: str, html: str | None, json_output: bool) -> 
 def api(ctx: click.Context, base_url: str, html: str | None, json_output: bool) -> None:
     """Analyze API endpoints for security and integrity."""
     try:
-        # Validate inputs
         base_url = validate_url(base_url)
         if html:
             validate_html_filename(html)
 
-        # Build DI container
         config_manager = ConfigManager()
         analysis_config = _resolve_analysis_config(config_manager, html, json_output)
         container = _build_container(config_manager)
 
-        # Resolve dependencies
         analyzer = container.resolve(APIAnalyzer)
         formatter = container.resolve(CLIFormatter)
         html_generator = container.resolve(HTMLDashboardGenerator)
 
-        # Run analysis with progress indicator
         with ProgressIndicator("Analyzing API endpoints"):
             result = asyncio.run(analyzer.analyze(base_url, analysis_config))
 
-        # Output results
         if json_output:
             click.echo(json.dumps(result.to_dict(), indent=2))
         else:
             formatter.generate_cli_output(result)
 
-        # Generate HTML report if requested
         if html:
             html_generator.generate_html_report(result, html)
-            click.echo(f"\nHTML report saved to: {html}", err=True)
+            click.echo(
+                "  " +
+                click.style("✔ ", fg="green", bold=True) +
+                click.style(f"HTML report saved to: {html}", fg="green"),
+                err=True,
+            )
 
     except click.BadParameter as e:
-        click.echo(f"Error: {e.format_message()}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e.format_message()}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
     except KeyboardInterrupt:
-        click.echo("\nAnalysis interrupted.", err=True)
+        click.echo(
+            "\n  " + click.style("○ Analysis interrupted.", fg="yellow"),
+            err=True,
+        )
         sys.exit(130)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo(
+            "  " + click.style(f"✖ {e}", fg="red"),
+            err=True,
+        )
         sys.exit(1)
 
 
@@ -630,15 +674,20 @@ def config_set(key: str, value: str) -> None:
     try:
         config_manager = ConfigManager()
         config_manager.set(key, value)
-        # Mask sensitive values in confirmation message
         display_value = (
             ConfigManager.mask_value(value)
             if ConfigManager.is_sensitive_key(key)
             else value
         )
-        click.echo(f"Set '{key}' = '{display_value}'")
+        click.echo(
+            "  " +
+            click.style("✔ ", fg="green", bold=True) +
+            click.style(f"{key}", fg="bright_black") +
+            click.style(" = ", fg="bright_black") +
+            click.style(display_value, fg="cyan")
+        )
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo("  " + click.style(f"✖ {e}", fg="red"), err=True)
         sys.exit(1)
 
 
@@ -652,7 +701,7 @@ def config_edit() -> None:
         editor = ConfigEditor(config_manager)
         editor.run()
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo("  " + click.style(f"✖ {e}", fg="red"), err=True)
         sys.exit(1)
 
 
@@ -663,12 +712,20 @@ def config_list() -> None:
         config_manager = ConfigManager()
         entries = config_manager.list_all()
         if not entries:
-            click.echo("No configuration values set.")
+            click.echo(
+                "  " + click.style("○ No configuration values set.", fg="bright_black")
+            )
             return
+        click.echo(click.style("  " + "─" * 40, fg="bright_black"))
         for key, value in sorted(entries.items()):
-            click.echo(f"  {key} = {value}")
+            click.echo(
+                "  " +
+                click.style(f"{key:<18}", fg="bright_black") +
+                click.style(value, fg="cyan")
+            )
+        click.echo(click.style("  " + "─" * 40, fg="bright_black"))
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo("  " + click.style(f"✖ {e}", fg="red"), err=True)
         sys.exit(1)
 
 
@@ -680,10 +737,17 @@ def config_delete(key: str) -> None:
         config_manager = ConfigManager()
         deleted = config_manager.delete(key)
         if deleted:
-            click.echo(f"Deleted '{key}'.")
+            click.echo(
+                "  " +
+                click.style("✔ ", fg="green", bold=True) +
+                click.style(f"Deleted '{key}'.", fg="bright_black")
+            )
         else:
-            click.echo(f"Key '{key}' not found.", err=True)
+            click.echo(
+                "  " + click.style(f"○ Key '{key}' not found.", fg="yellow"),
+                err=True,
+            )
             sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+        click.echo("  " + click.style(f"✖ {e}", fg="red"), err=True)
         sys.exit(1)
