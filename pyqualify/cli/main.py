@@ -15,6 +15,7 @@ import sys
 import click
 import httpx
 
+from pyqualify import __version__
 from pyqualify.ai.engine import AIEngine, _PROVIDER_DEFAULTS
 from pyqualify.analyzers.api_analyzer import APIAnalyzer
 from pyqualify.analyzers.code_analyzer import CodeAnalyzer
@@ -46,7 +47,7 @@ _MODES = {
 
 # -- Banner --------------------------------------------------------------------
 
-def _print_banner() -> None:
+def _print_banner(config_manager: "ConfigManager | None" = None) -> None:
     banner = r"""
 ██████╗ ██╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ██╗     ██╗███████╗██╗   ██╗
 ██╔══██╗╚██╗ ██╔╝██╔═══██╗██║   ██║██╔══██╗██║     ██║██╔════╝╚██╗ ██╔╝
@@ -63,11 +64,27 @@ def _print_banner() -> None:
     )
     click.echo(click.style("  " + "─" * 70, fg="bright_black"))
 
+    # -- Resolve real system data ----------------------------------------------
+    version_str = f"v{__version__}"
+
+    if config_manager is not None:
+        provider = config_manager.get("provider", "openai")
+        defaults = _PROVIDER_DEFAULTS.get(provider, _PROVIDER_DEFAULTS["openai"])
+        engine_str = config_manager.get("model") or defaults["model"]
+        is_configured = config_manager.is_configured()
+    else:
+        # No config available yet (e.g. first-run banner before setup)
+        engine_str = "not configured"
+        is_configured = False
+
+    status_str = "● ready" if is_configured else "○ setup needed"
+    status_color = "green" if is_configured else "yellow"
+
     cols = [
-        ("version", "v1.0.0", "green"),
-        ("engine", "claude-sonnet-4", "cyan"),
-        ("mode", "interactive", "yellow"),
-        ("status", "● ready", "green"),
+        ("version", version_str,  "green"),
+        ("engine",  engine_str,   "cyan"),
+        ("mode",    "interactive", "yellow"),
+        ("status",  status_str,   status_color),
     ]
     row = "  ".join(
         click.style(f"{k:<9}", fg="bright_black") + click.style(v, fg=color)
@@ -143,7 +160,7 @@ def _run_setup(config_manager: ConfigManager) -> None:
 def _ensure_configured(config_manager: ConfigManager) -> None:
     """Block execution if the tool has not been configured yet."""
     if not config_manager.is_configured():
-        _print_banner()
+        _print_banner(config_manager)
         click.echo(
             click.style(
                 "  QAAI is not configured yet.\n"
@@ -240,7 +257,7 @@ def _run_interactive() -> None:
     """Full interactive session: config check -> banner -> mode -> target -> options -> analysis."""
     config_manager = ConfigManager()
     _ensure_configured(config_manager)
-    _print_banner()
+    _print_banner(config_manager)
 
     # Show current provider/model in header
     provider = config_manager.get("provider", "openai")
@@ -426,8 +443,8 @@ def cli(ctx: click.Context) -> None:
 @cli.command()
 def setup() -> None:
     """Configure your AI provider and API key (run this first)."""
-    _print_banner()
     config_manager = ConfigManager()
+    _print_banner(config_manager)
     already = config_manager.is_configured()
     if already:
         provider = config_manager.get("provider", "openai")
