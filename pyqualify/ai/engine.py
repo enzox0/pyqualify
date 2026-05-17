@@ -1,4 +1,4 @@
-"""AI engine implementation supporting OpenAI, Anthropic, and Google providers."""
+"""AI engine implementation supporting OpenAI, Anthropic, Google, and Groq providers."""
 
 import asyncio
 import json
@@ -23,6 +23,10 @@ _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "google": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.0-flash",
+    },
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "llama-3.3-70b-versatile",
     },
 }
 
@@ -152,7 +156,7 @@ class AIEngine:
             ],
             "temperature": 0.2,
         }
-        # json_object mode is supported by OpenAI and Gemini but not all models
+        # json_object mode is supported by OpenAI and Gemini but not Groq or all models
         if self._provider in ("openai", "google"):
             kwargs["response_format"] = {"type": "json_object"}
 
