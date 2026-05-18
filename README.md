@@ -6,9 +6,9 @@ PyQualify is a command-line tool that performs automated quality assurance and s
 
 ## Features
 
-- **Web Analysis** - Security headers, form CSRF detection, SEO completeness, accessibility compliance, performance signals, broken link detection, CAPTCHA checks, HTTP request smuggling, DOM-based XSS, open redirect, and more
-- **Code Analysis** - Security vulnerabilities, bug risk detection, code quality metrics, test gap identification, dependency risk assessment, audit log checks, known CVE detection, and password policy enforcement
-- **API Analysis** - Authentication enforcement, response integrity, schema conformance, injection vector testing, rate limiting verification, HTTP request smuggling, JSON hijacking, internal IP leakage, application-level DoS, and more
+- **Web Analysis** - Security headers, form CSRF detection, SEO completeness, accessibility compliance, performance signals, broken link detection, CAPTCHA checks, HTTP request smuggling, case-sensitivity bypass detection, JSON hijacking, DOM-based XSS, open redirect, and server version disclosure
+- **Code Analysis** - Security vulnerabilities, bug risk detection, code quality metrics, test gap identification, dependency risk assessment, audit log checks, case-sensitivity bypass detection, known CVE detection, and password policy enforcement
+- **API Analysis** - Authentication enforcement, response integrity, schema conformance, injection vector testing, rate limiting verification, audit log manipulation, CAPTCHA bypass, HTTP request smuggling, case-sensitivity bypass, JSON hijacking, open redirect, server version disclosure, internal IP leakage, and application-level DoS
 - **AI-Powered Classification** - Findings are processed through an LLM for intelligent severity assignment, CWE/OWASP mapping, and contextual recommendations
 - **Scoring & Grading** - Numeric score (0-100), letter grade (A-F), and risk level for every analysis run
 - **PDF Reports** - Professionally formatted PDF reports saved automatically to `~/Documents/PyQualify/`
@@ -196,6 +196,57 @@ uv run pyqualify api https://api.example.com --only authentication,injection
 # Skip specific tools
 uv run pyqualify code ./src --disable test-gaps,quality
 ```
+
+#### Web tools
+
+| Tool | Description |
+|------|-------------|
+| `security-headers` | Check for missing or misconfigured security headers |
+| `forms` | Check forms for CSRF tokens and sensitive autocomplete |
+| `seo` | Check for missing SEO elements (title, meta, OG tags) |
+| `accessibility` | Check accessibility compliance (alt, headings, ARIA, labels) |
+| `performance` | Check performance signals (inline scripts, lazy loading, load time) |
+| `links` | Verify links for broken URLs and suspicious domains |
+| `captcha` | Detect missing or weak CAPTCHA on sensitive forms |
+| `smuggling-headers` | Check for Transfer-Encoding/Content-Length co-existence |
+| `case-sensitivity` | Check if URL path casing changes bypass access controls |
+| `json-hijacking` | Detect JSON hijacking vectors in HTML scripts |
+| `open-redirect` | Detect open redirect parameters in forms and links |
+| `server-version-disclosure` | Detect server version/technology in response headers |
+| `dom-xss` | Detect DOM-based XSS sinks reading from URL fragments or query strings |
+
+#### Code tools
+
+| Tool | Description |
+|------|-------------|
+| `security` | Detect injection vulnerabilities, hardcoded secrets, insecure patterns |
+| `bug-risks` | Detect null dereferences, uncaught exceptions, race conditions |
+| `quality` | Detect dead code, duplicated logic, high complexity, magic numbers |
+| `test-gaps` | Detect missing tests, weak assertions, untested branches |
+| `dependencies` | Detect typosquatting, deprecated packages, wildcard imports |
+| `audit-log` | Detect log injection, log suppression, audit log deletion |
+| `case-sensitivity` | Detect missing case normalization in auth/routing comparisons |
+| `known-vulnerabilities` | Detect imports of packages with known CVEs |
+| `password-policy` | Detect weak or missing password policy enforcement |
+
+#### API tools
+
+| Tool | Description |
+|------|-------------|
+| `authentication` | Test authentication enforcement (no creds, expired/malformed tokens) |
+| `response-integrity` | Test for information leakage and status code mismatches |
+| `injection` | Test SQL, NoSQL, and command injection via payloads |
+| `rate-limiting` | Test rate limiting by sending burst requests |
+| `schema-conformance` | Validate response schema consistency across requests |
+| `audit-log-manipulation` | Test for log injection via headers/params |
+| `captcha-bypass` | Test if auth endpoints work without CAPTCHA |
+| `http-request-smuggling` | Test for CL.TE / TE.CL request smuggling |
+| `case-sensitivity` | Test for case-sensitive route/auth bypass |
+| `json-hijacking` | Test for unprotected top-level JSON arrays |
+| `open-redirect` | Test for open redirect via common redirect parameters |
+| `server-version-disclosure` | Detect server version/technology in response headers |
+| `internal-ip-leakage` | Detect private IP addresses and internal hostnames in responses |
+| `application-dos` | Test for missing payload size and JSON depth limits |
 
 ## Output
 
