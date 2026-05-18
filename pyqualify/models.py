@@ -130,6 +130,9 @@ class AnalysisConfig:
     html_output: str | None = None
     pdf_output: bool = True
     json_output: bool = False
+    extra_extensions: list[str] = field(default_factory=list)
+    enabled_tools: list[str] = field(default_factory=list)
+    disabled_tools: list[str] = field(default_factory=list)
 
 
 @dataclass
