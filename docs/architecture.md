@@ -9,13 +9,13 @@ CLI Layer
 Analysis Engine (Web / Code / API)
     |
     v
-AI Engine (OpenAI / Anthropic / Google)
+AI Engine (OpenAI / Anthropic / Google / Groq)
     |
     v
 Scoring Engine
     |
     v
-Report Generator (CLI / HTML)
+Report Generator (CLI / PDF)
 ```
 
 ---
@@ -28,7 +28,7 @@ Entry point for all user interaction. Built with [Click](https://click.palletspr
 
 | File | Responsibility |
 |------|---------------|
-| `main.py` | Command group, subcommands (`web`, `code`, `api`, `config`), interactive menu, DI wiring |
+| `main.py` | Command group, subcommands (`web`, `code`, `api`, `tools`, `config`), interactive menu, DI wiring |
 | `progress.py` | Thread-based spinner shown during analysis |
 | `validators.py` | URL, path, and filename validation for CLI arguments |
 
@@ -42,13 +42,31 @@ Three independent analyzers, each implementing `AnalyzerProtocol`:
 async def analyze(self, target: str, config: AnalysisConfig) -> AnalysisResult
 ```
 
-| Analyzer | Target | Checks |
-|----------|--------|--------|
-| `WebAnalyzer` | URL | Security headers, CSRF, SEO, accessibility, performance, broken/suspicious links |
-| `CodeAnalyzer` | File or directory | Injection, hardcoded secrets, deserialization, path traversal, bug risks, quality, test gaps, dependencies |
-| `APIAnalyzer` | Base URL | Authentication enforcement, response integrity, schema conformance, injection, rate limiting |
+| Analyzer | Target | Tools |
+|----------|--------|-------|
+| `WebAnalyzer` | URL | security-headers, forms, seo, accessibility, performance, links, captcha, smuggling-headers, case-sensitivity, json-hijacking, open-redirect, server-version-disclosure, dom-xss |
+| `CodeAnalyzer` | File or directory | security, bug-risks, quality, test-gaps, dependencies, audit-log, case-sensitivity, known-vulnerabilities, password-policy |
+| `APIAnalyzer` | Base URL | authentication, response-integrity, injection, rate-limiting, schema-conformance, audit-log-manipulation, captcha-bypass, http-request-smuggling, case-sensitivity, json-hijacking, open-redirect, server-version-disclosure, internal-ip-leakage, application-dos |
 
-Each analyzer produces a list of `RawFinding` objects, passes them to the AI engine, then feeds the enriched `Issue` list to the scoring engine.
+Each analyzer produces a list of `RawFinding` objects, passes them to the AI engine, then feeds the enriched `Issue` list to the scoring engine. Individual tools can be enabled or disabled per run via `AnalysisConfig.enabled_tools` / `disabled_tools`.
+
+### Tool Registry - `pyqualify/tool_registry.py`
+
+Central registry of all named tools per analyzer category. Used by the CLI `tools` command and by each analyzer to gate which checks run.
+
+```python
+from pyqualify.tool_registry import TOOL_REGISTRY, ToolSelector
+
+# Check if a tool is enabled for this run
+selector = ToolSelector.from_config(category="api", config=analysis_config)
+if selector.is_enabled("injection"):
+    findings += await self._test_injection(target)
+```
+
+`ToolSelector` supports three modes:
+- **All enabled** (default) — no filtering specified
+- **Whitelist** — `only` list provided; all other tools are skipped
+- **Blacklist** — `exclude` list provided; listed tools are skipped
 
 ### AI Engine - `pyqualify/ai/`
 
@@ -56,7 +74,7 @@ Handles LLM communication with retry logic and multi-provider support.
 
 ```
 AIEngine
-  |-- _build_client()       - instantiates OpenAI / Anthropic / Google client
+  |-- _build_client()       - instantiates OpenAI / Anthropic / Google / Groq client
   |-- process_findings()    - orchestrates prompt -> LLM -> parse with retries
   |-- _call_openai_compat() - OpenAI and Google Gemini (OpenAI-compatible API)
   |-- _call_anthropic()     - Anthropic Messages API
@@ -68,9 +86,10 @@ AIEngine
 
 | Provider | Client | Notes |
 |----------|--------|-------|
-| `openai` | `openai.AsyncOpenAI` | Default |
-| `google` | `openai.AsyncOpenAI` | Uses Gemini's OpenAI-compatible endpoint |
-| `anthropic` | `anthropic.AsyncAnthropic` | Requires `uv add anthropic` |
+| `openai` | `openai.AsyncOpenAI` | Default; uses `response_format: json_object` |
+| `google` | `openai.AsyncOpenAI` | Gemini's OpenAI-compatible endpoint; uses `response_format: json_object` |
+| `anthropic` | `anthropic.AsyncAnthropic` | Requires `uv add anthropic`; strips markdown fences from responses |
+| `groq` | `openai.AsyncOpenAI` | Groq's OpenAI-compatible endpoint; does NOT use `response_format: json_object` |
 
 **Retry behaviour:** up to `max_retries` attempts (default 3) with `retry_delay` seconds between each (default 2.0s). On total failure, `_fallback_issues()` returns one `INFO`-severity issue per raw finding so the pipeline always completes.
 
@@ -86,17 +105,13 @@ Pure function logic - no I/O, no external dependencies.
 
 ### Report Generators - `pyqualify/reporting/`
 
-Both implement `ReportGeneratorProtocol`:
+| Generator | Output | Protocol method |
+|-----------|--------|----------------|
+| `CLIFormatter` | Color-coded terminal output sorted by severity | `generate_cli_output()` |
+| `PDFReportGenerator` | ReportLab-based PDF saved to `~/Documents/PyQualify/` | `generate_pdf_report()` |
+| `HTMLDashboardGenerator` | Self-contained HTML file via Jinja2 template | `generate_html_report()` |
 
-```python
-def generate_cli_output(self, result: AnalysisResult, use_color: bool = True) -> None
-def generate_html_report(self, result: AnalysisResult, output_path: str) -> None
-```
-
-| Generator | Output |
-|-----------|--------|
-| `CLIFormatter` | Color-coded terminal output sorted by severity |
-| `HTMLDashboardGenerator` | Self-contained HTML file via Jinja2 template (`templates/dashboard.html`) |
+`CLIFormatter` and `PDFReportGenerator` are registered in the DI container and used by all CLI commands. `HTMLDashboardGenerator` is available in the package but not wired into the CLI by default.
 
 ---
 
@@ -116,7 +131,11 @@ container.register_singleton(PyqualifyLogger, lambda: PyqualifyLogger(...))
 analyzer = container.resolve(WebAnalyzer)
 ```
 
-The container is wired fresh on each CLI invocation inside `_build_container()` in `cli/main.py`. Singletons within a run (logger, AI engine, config manager) are shared; analyzers are transient so each run gets a fresh HTTP client.
+The container is wired fresh on each CLI invocation inside `_build_container()` in `cli/main.py`.
+
+**Singletons per run:** `ConfigManager`, `PyqualifyLogger`, `AIEngine`, `CLIFormatter`, `PDFReportGenerator`
+
+**Transients (fresh instance per resolve):** `WebAnalyzer`, `CodeAnalyzer`, `APIAnalyzer` — each gets a fresh `httpx.AsyncClient` so connection state doesn't leak between runs.
 
 ---
 
@@ -141,9 +160,21 @@ Key types:
 | `RawFinding` | check, category, location, evidence, context dict |
 | `Issue` | check, severity, title, description, evidence, recommendation, cwe, owasp |
 | `AnalysisResult` | score (0-100), grade (A-F), risk_level, issues, summary, metadata |
-| `AnalysisConfig` | timeout, max_links, rate_limit settings, html_output, json_output |
+| `AnalysisConfig` | timeout, max_links, rate_limit settings, pdf_output, json_output, enabled_tools, disabled_tools, extra_extensions |
 | `AIConfig` | api_key, provider, base_url, model, timeout, max_retries, retry_delay |
 | `LogConfig` | level, log_file |
+| `AnalysisContext` | mode, target, additional_context dict |
+
+---
+
+## Utilities - `pyqualify/utils.py`
+
+Two shared helper functions used across analyzers and the AI engine:
+
+| Function | Purpose |
+|----------|---------|
+| `truncate_evidence(evidence, max_length=500)` | Truncates long evidence strings with a `"... [truncated]"` indicator |
+| `resolve_location(location, fallback="unknown")` | Returns `fallback` if `location` is `None` or empty |
 
 ---
 
@@ -163,7 +194,7 @@ CLI arguments  (passed at runtime)
 
 `ConfigManager` merges all three sources on every `get()` call. The config file is TOML, written manually (Python's `tomllib` is read-only). Sensitive keys (`api_key`, `token`, `secret`, `password`) are masked in `list_all()` output.
 
-`ConfigEditor` provides a curses-based interactive editor (nano-style keybindings). On Windows, curses is unavailable - use `pyqualify config set` instead.
+`ConfigEditor` provides a curses-based interactive editor (nano-style keybindings). On Windows, curses is unavailable — use `pyqualify config set` instead.
 
 ---
 
@@ -191,7 +222,7 @@ All major component boundaries are defined as Python `Protocol` classes:
 |----------|---------------|
 | `AnalyzerProtocol` | `WebAnalyzer`, `CodeAnalyzer`, `APIAnalyzer` |
 | `AIEngineProtocol` | `AIEngine` |
-| `ReportGeneratorProtocol` | `CLIFormatter`, `HTMLDashboardGenerator` |
+| `ReportGeneratorProtocol` | `CLIFormatter`, `PDFReportGenerator`, `HTMLDashboardGenerator` |
 
 This allows any component to be swapped or mocked in tests without modifying calling code.
 
@@ -200,7 +231,7 @@ This allows any component to be swapped or mocked in tests without modifying cal
 ## Directory Structure
 
 ```
-pyqualify-tool/
+pyqualify/
     pyproject.toml
     uv.lock
     README.md
@@ -209,12 +240,18 @@ pyqualify-tool/
         architecture.md
         configuration.md
         development.md
+        web-analysis.md
+        code-analysis.md
+        api-analysis.md
+        scoring.md
+        pdf-reports.md
     pyqualify/
         __init__.py           version
         __main__.py           python -m pyqualify entry point
         models.py             all dataclasses and enums
         container.py          DI container
         utils.py              truncate_evidence, resolve_location
+        tool_registry.py      TOOL_REGISTRY, ToolSelector
         cli/
             main.py           Click commands + DI wiring
             progress.py       spinner
@@ -231,6 +268,7 @@ pyqualify-tool/
         reporting/
             cli_formatter.py
             html_generator.py
+            pdf_generator.py
             protocol.py
             templates/
                 dashboard.html

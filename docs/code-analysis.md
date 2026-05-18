@@ -4,9 +4,11 @@ Code analysis scans a file or directory for security vulnerabilities, bug risks,
 
 ```bash
 uv run pyqualify code ./src
-uv run pyqualify code ./src --html report.html
+uv run pyqualify code ./src --pdf
 uv run pyqualify code ./src --json
 uv run pyqualify code path/to/single_file.py
+uv run pyqualify code ./src --only security,dependencies
+uv run pyqualify code ./src --disable test-gaps
 ```
 
 ---
@@ -15,9 +17,11 @@ uv run pyqualify code path/to/single_file.py
 
 Any file with one of these extensions is analyzed:
 
-`.py` `.js` `.ts` `.jsx` `.tsx` `.java` `.rb` `.go` `.php` `.cs` `.cpp` `.c` `.h` `.rs` `.swift` `.kt`
+`.py` `.js` `.ts` `.jsx` `.tsx` `.java` `.rb` `.go` `.php` `.cs` `.cpp` `.c` `.h` `.rs` `.swift` `.kt` `.dart` `.scala` `.ex` `.exs` `.sh` `.bash` `.zsh` `.kts` `.groovy` `.clj` `.cljs` `.hs` `.ml` `.mli` `.fs` `.fsx` `.fsi` `.r` `.R` `.jl` `.lua` `.pl` `.pm` `.t` `.tcl` `.vb` `.vbs` `.ps1` `.psm1` `.psd1` `.asm` `.s` `.S`
 
 When a directory is given, it is walked recursively. Hidden directories and common non-source directories are skipped automatically: `.git`, `node_modules`, `__pycache__`, `venv`, `.venv`, `dist`, `build`.
+
+Additional file extensions can be included via the `PYQUALIFY_EXTRA_EXTENSIONS` environment variable (comma-separated, e.g. `.tpl,.tmpl`).
 
 ---
 
@@ -74,14 +78,58 @@ Secrets found in evidence are automatically redacted (`****REDACTED****`) before
 | `deprecated-package` | Imports of known deprecated stdlib modules: `optparse`, `imp`, `distutils`, `asyncore`, `asynchat`, `cgi`, etc. |
 | `wildcard-import` | `from x import *` statements |
 
+### Audit Log
+
+| Check | What's detected |
+|-------|----------------|
+| `log-injection` | User-controlled input passed directly to logging calls without sanitization |
+| `log-suppression` | Broad `except` blocks that swallow exceptions without logging them |
+| `audit-log-deletion` | Code that deletes, truncates, or rotates log files programmatically |
+
+### Case Sensitivity
+
+Detects missing case normalization in authentication and routing comparisons — for example, comparing usernames or role strings without `.lower()` / `.upper()`, which can allow bypass via mixed-case input.
+
+### Known Vulnerabilities
+
+Checks imported packages against a registry of packages with known CVEs. Covers approximately 35 packages across Python, JavaScript, Java, Ruby, PHP, and Go ecosystems. Each finding includes the CVE identifier and a brief description of the vulnerability.
+
+### Password Policy
+
+Detects weak or missing password policy enforcement:
+
+- Minimum length checks below 8 characters
+- Missing complexity requirements (uppercase, digits, special characters)
+- Absence of any password validation before storage or comparison
+
 ---
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `--html <file>` | Write an HTML dashboard report |
+| `--pdf` | Save a PDF report to `~/Documents/PyQualify/` |
 | `--json` | Output raw JSON to stdout |
+| `--only <tools>` | Run only the specified tools (comma-separated or repeated) |
+| `--disable <tools>` | Skip the specified tools (comma-separated or repeated) |
+
+Run `pyqualify tools code` to see all available tool names.
+
+---
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `security` | Detect injection vulnerabilities, hardcoded secrets, insecure patterns |
+| `bug-risks` | Detect null dereferences, uncaught exceptions, race conditions |
+| `quality` | Detect dead code, duplicated logic, high complexity, magic numbers |
+| `test-gaps` | Detect missing tests, weak assertions, untested branches |
+| `dependencies` | Detect typosquatting, deprecated packages, wildcard imports |
+| `audit-log` | Detect log injection, log suppression, audit log deletion |
+| `case-sensitivity` | Detect missing case normalization in auth/routing comparisons |
+| `known-vulnerabilities` | Detect imports of packages with known CVEs |
+| `password-policy` | Detect weak or missing password policy enforcement |
 
 ---
 

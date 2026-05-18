@@ -85,6 +85,6 @@ A single CRITICAL issue sets the risk level to `critical` even if the score is o
 }
 ```
 
-### HTML Dashboard
+### PDF Report
 
-The score is shown as a gauge, the grade as a badge, and the risk level as a color-coded indicator at the top of the report. See [HTML Reports](html-reports.md) for details.
+The score, grade, and risk level appear on the cover page and in the overview panel. See [PDF Reports](pdf-reports.md) for details.

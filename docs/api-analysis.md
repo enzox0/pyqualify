@@ -4,8 +4,10 @@ API analysis tests a REST API base URL for authentication weaknesses, response i
 
 ```bash
 uv run pyqualify api https://api.example.com
-uv run pyqualify api https://api.example.com --html report.html
+uv run pyqualify api https://api.example.com --pdf
 uv run pyqualify api https://api.example.com --json
+uv run pyqualify api https://api.example.com --only authentication,injection
+uv run pyqualify api https://api.example.com --disable rate-limiting
 ```
 
 ---
@@ -82,6 +84,47 @@ A burst of **50 requests** is sent within a **10-second window** (configurable v
 | 429 received but no `Retry-After` header | `missing-retry-after-header` |
 | 429 received with `Retry-After` | No finding - rate limiting is correctly implemented |
 
+### Audit Log Manipulation
+
+Tests whether log injection is possible via common request headers and query parameters. Sends payloads containing newline characters and ANSI escape sequences to `User-Agent`, `X-Forwarded-For`, and `Referer` headers. A finding is raised if the server reflects the payload back in the response body without sanitization.
+
+### CAPTCHA Bypass
+
+Tests whether authentication-related endpoints (`/login`, `/register`, `/signup`, `/auth`) accept requests without any CAPTCHA token. Checks for the absence of CAPTCHA validation fields in both the request requirements and response bodies.
+
+### HTTP Request Smuggling
+
+Sends requests with conflicting `Transfer-Encoding: chunked` and `Content-Length` headers (CL.TE and TE.CL variants) to detect desync vulnerabilities. Also checks for `Transfer-Encoding` obfuscation (`Transfer-Encoding: xchunked`, `Transfer-Encoding : chunked`).
+
+### Case Sensitivity
+
+Tests whether route and authentication checks are case-sensitive by probing paths with mixed casing (e.g. `/Admin`, `/ADMIN`, `/aDmIn`). A 2xx response on a variant that should be protected indicates a potential bypass.
+
+### JSON Hijacking
+
+Tests for unprotected top-level JSON arrays by sending a GET request with an `Accept: application/json` header. A response that begins with `[` without CSRF protection or an `X-Content-Type-Options: nosniff` header is flagged.
+
+### Open Redirect
+
+Tests common redirect parameters (`redirect`, `next`, `url`, `return`, `returnUrl`, `callback`, `goto`) with an external URL payload. A 3xx response pointing to the injected URL is flagged as an open redirect.
+
+### Server Version Disclosure
+
+Checks response headers (`Server`, `X-Powered-By`, `X-AspNet-Version`, `X-Runtime`, etc.) for technology names and version strings that aid fingerprinting and targeted attacks.
+
+### Internal IP Leakage
+
+Scans response bodies and headers for private IP address ranges (10.x.x.x, 172.16-31.x.x, 192.168.x.x) and internal hostnames (`.internal`, `.local`, `.corp`, `localhost`).
+
+### Application-Level DoS
+
+Tests whether the API enforces payload size and JSON depth limits:
+
+- Sends a request body of 10 MB to check for missing size limits
+- Sends a deeply nested JSON object (100 levels) to check for missing depth limits
+
+A 2xx response to either test is flagged.
+
 ---
 
 ## Timeouts
@@ -94,8 +137,33 @@ Each test category runs with a **30-second timeout** (configurable via `PYQUALIF
 
 | Option | Description |
 |--------|-------------|
-| `--html <file>` | Write an HTML dashboard report |
+| `--pdf` | Save a PDF report to `~/Documents/PyQualify/` |
 | `--json` | Output raw JSON to stdout |
+| `--only <tools>` | Run only the specified tools (comma-separated or repeated) |
+| `--disable <tools>` | Skip the specified tools (comma-separated or repeated) |
+
+Run `pyqualify tools api` to see all available tool names.
+
+---
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `authentication` | Test authentication enforcement (no creds, expired/malformed tokens) |
+| `response-integrity` | Test for information leakage and status code mismatches |
+| `injection` | Test SQL, NoSQL, and command injection via payloads |
+| `rate-limiting` | Test rate limiting by sending burst requests |
+| `schema-conformance` | Validate response schema consistency across requests |
+| `audit-log-manipulation` | Test for log injection via headers/params |
+| `captcha-bypass` | Test if auth endpoints work without CAPTCHA |
+| `http-request-smuggling` | Test for CL.TE / TE.CL request smuggling |
+| `case-sensitivity` | Test for case-sensitive route/auth bypass |
+| `json-hijacking` | Test for unprotected top-level JSON arrays |
+| `open-redirect` | Test for open redirect via common redirect parameters |
+| `server-version-disclosure` | Detect server version/technology in response headers |
+| `internal-ip-leakage` | Detect private IP addresses and internal hostnames in responses |
+| `application-dos` | Test for missing payload size and JSON depth limits |
 
 ---
 

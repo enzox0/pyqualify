@@ -18,8 +18,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ## Setup
 
 ```bash
-git clone <repo-url> pyqualify-tool
-cd pyqualify-tool
+git clone <repo-url> pyqualify
+cd pyqualify
 
 # Install all dependencies including dev extras
 uv sync --extra dev
@@ -39,6 +39,18 @@ uv run pyqualify
 uv run pyqualify web https://example.com
 uv run pyqualify code ./src
 uv run pyqualify api https://api.example.com
+
+# With output options
+uv run pyqualify web https://example.com --pdf
+uv run pyqualify web https://example.com --json
+
+# Tool filtering
+uv run pyqualify web https://example.com --only security-headers,seo
+uv run pyqualify code ./src --disable test-gaps
+
+# List available tools
+uv run pyqualify tools
+uv run pyqualify tools code
 
 # First-time setup
 uv run pyqualify setup
@@ -79,7 +91,7 @@ uv run pytest -x
 ## Project Structure
 
 ```
-pyqualify-tool/
+pyqualify/
     pyproject.toml        project metadata, dependencies, tool config
     uv.lock               pinned dependency versions
     pyqualify/            source package
@@ -192,6 +204,7 @@ from pyqualify.ai.protocol import AIEngineProtocol
 from pyqualify.logging.logger import PyqualifyLogger
 from pyqualify.models import AnalysisConfig, AnalysisResult, RawFinding
 from pyqualify.scoring.engine import ScoringEngine
+from pyqualify.tool_registry import ToolSelector
 
 class MyAnalyzer:
     def __init__(self, ai_engine: AIEngineProtocol, logger: PyqualifyLogger) -> None:
@@ -200,20 +213,26 @@ class MyAnalyzer:
         self._scoring = ScoringEngine()
 
     async def analyze(self, target: str, config: AnalysisConfig) -> AnalysisResult:
+        selector = ToolSelector.from_config(category="my-category", config=config)
         findings: list[RawFinding] = []
-        # ... collect findings ...
+
+        if selector.is_enabled("my-tool"):
+            findings += await self._run_my_tool(target)
+
         issues = await self._ai_engine.process_findings(findings, context)
         score = self._scoring.calculate_score(issues)
         # ... build and return AnalysisResult ...
 ```
 
-2. Add a prompt builder to `pyqualify/ai/prompts.py`.
+2. Add the new category and its tools to `TOOL_REGISTRY` in `pyqualify/tool_registry.py`.
 
-3. Register the analyzer in `_build_container()` in `pyqualify/cli/main.py`.
+3. Add a prompt builder to `pyqualify/ai/prompts.py`.
 
-4. Add a Click command in `pyqualify/cli/main.py`.
+4. Register the analyzer in `_build_container()` in `pyqualify/cli/main.py`.
 
-5. Add tests in `tests/test_my_analyzer.py`.
+5. Add a Click command in `pyqualify/cli/main.py`.
+
+6. Add tests in `tests/test_my_analyzer.py`.
 
 ---
 
@@ -228,7 +247,7 @@ class MyAnalyzer:
 },
 ```
 
-2. If the provider uses an OpenAI-compatible API, no further changes are needed - the existing `_call_openai_compat()` path handles it.
+2. If the provider uses an OpenAI-compatible API, no further changes are needed - the existing `_call_openai_compat()` path handles it. Note that `response_format: json_object` is only sent to `openai` and `google`; if your provider doesn't support it, add it to the exclusion list in `_call_openai_compat()`.
 
 3. If it uses a custom API, add a `_call_myprovider()` method and route to it in `_call_llm()`.
 
@@ -250,6 +269,9 @@ export PYQUALIFY_MAX_RETRIES=5
 export PYQUALIFY_RETRY_DELAY=1.0
 export PYQUALIFY_LOG_LEVEL=DEBUG
 export PYQUALIFY_LOG_FILE=/tmp/pyqualify.log
+export PYQUALIFY_RATE_LIMIT_BURST=100
+export PYQUALIFY_RATE_LIMIT_WINDOW=30
+export PYQUALIFY_EXTRA_EXTENSIONS=.tpl,.tmpl
 ```
 
 Copy `.env.example` to `.env` for local development.
