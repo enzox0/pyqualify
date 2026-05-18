@@ -1,4 +1,4 @@
-﻿"""Tests for the QAAI CLI main command group."""
+"""Tests for the QAAI CLI main command group."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -67,7 +67,7 @@ class TestWebCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["web", "not-a-url"])
         assert result.exit_code == 1
-        assert "Error" in result.output
+        assert "Invalid value" in result.output or "\u2716" in result.output
 
     def test_missing_url_argument(self) -> None:
         runner = CliRunner()
@@ -120,7 +120,7 @@ class TestWebCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["web", "--help"])
         assert result.exit_code == 0
-        assert "--html" in result.output
+        assert "--only" in result.output
         assert "--json" in result.output
 
 
@@ -131,7 +131,7 @@ class TestCodeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["code", "/nonexistent/path/xyz"])
         assert result.exit_code == 1
-        assert "Error" in result.output
+        assert "Invalid value" in result.output or "\u2716" in result.output
 
     def test_missing_path_argument(self) -> None:
         runner = CliRunner()
@@ -142,7 +142,7 @@ class TestCodeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["code", "--help"])
         assert result.exit_code == 0
-        assert "--html" in result.output
+        assert "--only" in result.output
         assert "--json" in result.output
 
 
@@ -153,7 +153,7 @@ class TestAPICommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["api", "not-a-url"])
         assert result.exit_code == 1
-        assert "Error" in result.output
+        assert "Invalid value" in result.output or "\u2716" in result.output
 
     def test_missing_url_argument(self) -> None:
         runner = CliRunner()
@@ -164,7 +164,7 @@ class TestAPICommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["api", "--help"])
         assert result.exit_code == 0
-        assert "--html" in result.output
+        assert "--only" in result.output
         assert "--json" in result.output
 
 
