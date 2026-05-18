@@ -68,6 +68,7 @@ from pyqualify.models import (
 
 
 from pyqualify.scoring.engine import ScoringEngine
+from pyqualify.tool_registry import ToolSelector
 
 
 from pyqualify.utils import resolve_location, truncate_evidence
@@ -430,10 +431,11 @@ class WebAnalyzer:
         if response is not None and response.status_code < 400:
 
 
-            header_findings = await self._check_security_headers(response)
+            if ToolSelector.from_config("web", config).is_enabled("security-headers"):
+                header_findings = await self._check_security_headers(response)
 
 
-            findings.extend(header_findings)
+                findings.extend(header_findings)
 
 
 
@@ -548,54 +550,101 @@ class WebAnalyzer:
 
 
                 soup = None
-
-
-
-
-
             if soup:
+                # Build tool selector from config
+                tool_selector = ToolSelector.from_config("web", config)
+                if tool_selector.only or tool_selector.exclude:
+                    self._logger.info(
+                        "web_analyzer",
+                        f"Enabled tools: {tool_selector.get_enabled_tools()}",
+                    )
 
-
-                form_findings = await self._check_forms(soup)
-
-
-                findings.extend(form_findings)
-
-
-
-
-
-                seo_findings = await self._check_seo(soup)
-
-
-                findings.extend(seo_findings)
+                if tool_selector.is_enabled("forms"):
+                    form_findings = await self._check_forms(soup)
+                    findings.extend(form_findings)
 
 
 
 
 
-                a11y_findings = await self._check_accessibility(soup)
+                if tool_selector.is_enabled("seo"):
+                    seo_findings = await self._check_seo(soup)
 
 
-                findings.extend(a11y_findings)
-
-
-
-
-
-                perf_findings = await self._check_performance(soup, load_time)
-
-
-                findings.extend(perf_findings)
+                    findings.extend(seo_findings)
 
 
 
 
 
-                link_findings = await self._check_links(soup, target)
+                if tool_selector.is_enabled("accessibility"):
+                    a11y_findings = await self._check_accessibility(soup)
 
 
-                findings.extend(link_findings)
+                    findings.extend(a11y_findings)
+
+
+
+
+
+                if tool_selector.is_enabled("performance"):
+                    perf_findings = await self._check_performance(soup, load_time)
+
+
+                    findings.extend(perf_findings)
+
+
+
+
+
+                if tool_selector.is_enabled("links"):
+                    link_findings = await self._check_links(soup, target)
+
+
+                    findings.extend(link_findings)
+
+
+
+
+
+                # Vulnerability checks (Tasks 2, 3, 4, 5)
+
+
+                if tool_selector.is_enabled("captcha"):
+                    captcha_findings = await self._check_captcha(soup)
+
+
+                    findings.extend(captcha_findings)
+
+
+
+
+
+                if tool_selector.is_enabled("smuggling-headers"):
+                    smuggling_findings = await self._check_smuggling_headers(response)
+
+
+                    findings.extend(smuggling_findings)
+
+
+
+
+
+                if tool_selector.is_enabled("case-sensitivity"):
+                    case_findings = await self._check_case_sensitivity(target)
+
+
+                    findings.extend(case_findings)
+
+
+
+
+
+                if tool_selector.is_enabled("json-hijacking"):
+                    json_hijack_findings = await self._check_json_hijacking(soup)
+
+
+                    findings.extend(json_hijack_findings)
 
 
 
@@ -2605,3 +2654,212 @@ class WebAnalyzer:
 
 
 
+
+    # --- Task 2: Guessable CAPTCHA ---
+
+    async def _check_captcha(self, html: BeautifulSoup) -> list[RawFinding]:
+        """Detect forms with missing or weak CAPTCHA on sensitive pages."""
+        findings: list[RawFinding] = []
+
+        # Sensitive form action keywords
+        sensitive_keywords = ["login", "register", "signup", "contact", "reset", "forgot"]
+
+        # Known CAPTCHA provider indicators
+        captcha_providers = [
+            "www.google.com/recaptcha",
+            "hcaptcha.com",
+            "challenges.cloudflare.com",
+            "recaptcha",
+            "h-captcha",
+            "cf-turnstile",
+        ]
+
+        forms = html.find_all("form")
+        page_text = str(html).lower()
+
+        # Check if page has any known CAPTCHA provider
+        has_captcha_provider = any(provider in page_text for provider in captcha_providers)
+
+        for form in forms:
+            action = (form.get("action") or "").lower()
+            form_id = (form.get("id") or "").lower()
+            form_class = " ".join(form.get("class", [])).lower() if form.get("class") else ""
+            combined = f"{action} {form_id} {form_class}"
+
+            # Check if this is a sensitive form
+            is_sensitive = any(kw in combined for kw in sensitive_keywords)
+            if not is_sensitive:
+                continue
+
+            # Check for CAPTCHA in this form
+            form_html = str(form).lower()
+            form_has_captcha = (
+                has_captcha_provider
+                or any(provider in form_html for provider in captcha_providers)
+                or form.find("div", class_=lambda c: c and "captcha" in c.lower() if c else False)
+                or form.find("input", attrs={"name": lambda n: n and "captcha" in n.lower() if n else False})
+            )
+
+            if not form_has_captcha:
+                findings.append(RawFinding(
+                    check="missing-captcha",
+                    category="security",
+                    location=action or "[form]",
+                    evidence=(
+                        f"Sensitive form (action=\'{action}\') lacks CAPTCHA protection. "
+                        f"Login/registration forms should have CAPTCHA to prevent brute force."
+                    ),
+                    context={"severity_hint": "medium", "vulnerability_type": "captcha"},
+                ))
+            else:
+                # Check for weak CAPTCHA patterns (simple math)
+                if form.find("input", attrs={"name": lambda n: n and "captcha" in n.lower() if n else False}):
+                    # Look for adjacent math question
+                    form_text = form.get_text().lower()
+                    if any(op in form_text for op in ["what is", "solve:", "calculate"]):
+                        findings.append(RawFinding(
+                            check="weak-captcha",
+                            category="security",
+                            location=action or "[form]",
+                            evidence=(
+                                f"Form uses a simple math-based CAPTCHA which is easily "
+                                f"bypassable by automated tools."
+                            ),
+                            context={"severity_hint": "medium", "vulnerability_type": "captcha"},
+                        ))
+
+        return findings
+
+    # --- Task 3: HTTP Request Smuggling Headers ---
+
+    async def _check_smuggling_headers(self, response) -> list[RawFinding]:
+        """Check response headers for Transfer-Encoding and Content-Length co-existence."""
+        findings: list[RawFinding] = []
+
+        if response is None:
+            return findings
+
+        headers = response.headers
+        has_te = "transfer-encoding" in headers
+        has_cl = "content-length" in headers
+
+        if has_te and has_cl:
+            findings.append(RawFinding(
+                check="smuggling-header-coexistence",
+                category="security",
+                location=str(response.url),
+                evidence=(
+                    f"Response contains both Transfer-Encoding and Content-Length headers. "
+                    f"This can indicate susceptibility to HTTP request smuggling. "
+                    f"TE: {headers.get('transfer-encoding')}, CL: {headers.get('content-length')}"
+                ),
+                context={"severity_hint": "high", "vulnerability_type": "http-request-smuggling"},
+            ))
+
+        return findings
+
+    # --- Task 4: Case Sensitivity ---
+
+    async def _check_case_sensitivity(self, target_url: str) -> list[RawFinding]:
+        """Check if URL path casing changes produce different access results."""
+        findings: list[RawFinding] = []
+
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(target_url)
+        path = parsed.path
+
+        if not path or path == "/":
+            return findings
+
+        # Try uppercase version of the path
+        upper_path = path.upper()
+        if upper_path == path:
+            return findings
+
+        upper_url = urlunparse(parsed._replace(path=upper_path))
+
+        try:
+            original_resp = await asyncio.wait_for(
+                self._http_client.get(target_url, follow_redirects=True),
+                timeout=5.0,
+            )
+            upper_resp = await asyncio.wait_for(
+                self._http_client.get(upper_url, follow_redirects=True),
+                timeout=5.0,
+            )
+
+            orig_status = original_resp.status_code
+            upper_status = upper_resp.status_code
+
+            # If a forbidden path becomes accessible with different casing
+            if orig_status in (403, 404) and upper_status in range(200, 300):
+                findings.append(RawFinding(
+                    check="case-sensitive-access-bypass",
+                    category="security",
+                    location=target_url,
+                    evidence=(
+                        f"Case sensitivity bypass: original path returns {orig_status}, "
+                        f"uppercase path returns {upper_status}. Access control may be bypassable."
+                    ),
+                    context={"severity_hint": "high", "vulnerability_type": "case-sensitivity"},
+                ))
+            elif upper_status in (403, 404) and orig_status in range(200, 300):
+                # Reverse case - uppercase is blocked but original isn't (inconsistent)
+                pass  # This is normal behavior
+
+        except (asyncio.TimeoutError, httpx.RequestError):
+            pass
+
+        return findings
+
+    # --- Task 5: JSON Hijacking ---
+
+    async def _check_json_hijacking(self, html: BeautifulSoup) -> list[RawFinding]:
+        """Detect JSON hijacking vectors in HTML (script inclusions, constructor overrides)."""
+        findings: list[RawFinding] = []
+
+        scripts = html.find_all("script")
+
+        for script in scripts:
+            src = script.get("src", "")
+
+            # Check for script tags loading JSON endpoints
+            if src and (".json" in src.lower() or "/api/" in src.lower()):
+                findings.append(RawFinding(
+                    check="json-hijacking-script-inclusion",
+                    category="security",
+                    location=src,
+                    evidence=(
+                        f"Script tag loads JSON endpoint as JavaScript: src=\'{src[:100]}\'. "
+                        f"This may allow cross-origin data theft via JSON hijacking."
+                    ),
+                    context={"severity_hint": "high", "vulnerability_type": "json-hijacking"},
+                ))
+
+            # Check inline scripts for Array/Object constructor overrides
+            content = script.get_text()
+            if content:
+                override_patterns = [
+                    "Array = function",
+                    "Array=function",
+                    "Object = function",
+                    "Object=function",
+                    "Array.prototype",
+                    "__defineSetter__",
+                ]
+                for pattern in override_patterns:
+                    if pattern in content:
+                        findings.append(RawFinding(
+                            check="json-array-constructor-override",
+                            category="security",
+                            location="<script> (inline)",
+                            evidence=(
+                                f"Inline script overrides {pattern.split('=')[0].split('.')[0].strip()} "
+                                f"constructor/prototype. This is a classic JSON hijacking vector."
+                            ),
+                            context={"severity_hint": "critical", "vulnerability_type": "json-hijacking"},
+                        ))
+                        break
+
+        return findings

@@ -1,4 +1,4 @@
-﻿"""API Analyzer for testing REST API endpoints for security and integrity."""
+"""API Analyzer for testing REST API endpoints for security and integrity."""
 
 import asyncio
 import time
@@ -19,6 +19,7 @@ from pyqualify.models import (
     RiskLevel,
 )
 from pyqualify.scoring.engine import ScoringEngine
+from pyqualify.tool_registry import ToolSelector
 from pyqualify.utils import resolve_location, truncate_evidence
 
 
@@ -142,14 +143,35 @@ class APIAnalyzer:
         timeout = config.timeout or 30
 
         # Run each test category with timeout
+        # Maps internal test name -> (registry tool name, method)
         test_methods = [
-            ("authentication", self._test_authentication),
-            ("response_integrity", self._test_response_integrity),
-            ("injection", self._test_injection),
-            ("rate_limiting", self._test_rate_limiting),
+            ("authentication", "authentication", self._test_authentication),
+            ("response_integrity", "response-integrity", self._test_response_integrity),
+            ("injection", "injection", self._test_injection),
+            ("rate_limiting", "rate-limiting", self._test_rate_limiting),
+            ("audit_log_manipulation", "audit-log-manipulation", self._test_audit_log_manipulation),
+            ("captcha_bypass", "captcha-bypass", self._test_captcha_bypass),
+            ("http_request_smuggling", "http-request-smuggling", self._test_http_request_smuggling),
+            ("case_sensitivity", "case-sensitivity", self._test_case_sensitivity),
+            ("json_hijacking", "json-hijacking", self._test_json_hijacking),
         ]
 
-        for test_name, test_method in test_methods:
+        # Build tool selector from config
+        tool_selector = ToolSelector.from_config("api", config)
+        if tool_selector.only or tool_selector.exclude:
+            self._logger.info(
+                self._MODULE,
+                f"Enabled tools: {tool_selector.get_enabled_tools()}",
+            )
+
+        for test_name, registry_name, test_method in test_methods:
+            # Skip disabled tools
+            if not tool_selector.is_enabled(registry_name):
+                self._logger.debug(
+                    self._MODULE,
+                    f"Skipping disabled tool: {registry_name}",
+                )
+                continue
             try:
                 if test_name == "rate_limiting":
                     findings = await asyncio.wait_for(
@@ -1088,3 +1110,420 @@ class APIAnalyzer:
 
         return findings
 
+
+    # --- Task 1: Audit Log Manipulation ---
+
+    async def _test_audit_log_manipulation(self, endpoint: str) -> list[RawFinding]:
+        """Test for audit log manipulation via API (log injection through headers/params).
+
+        Sends requests with newline characters in headers/params to detect
+        log injection vulnerabilities.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing audit log manipulation for {endpoint}")
+
+        # Log injection payloads with newline characters
+        injection_payloads = [
+            "test%0aINJECTED_LOG_ENTRY",
+            "test%0dINJECTED_LOG_ENTRY",
+            "test\nFake log entry: admin logged in",
+            "test\r\nFake log entry: admin logged in",
+        ]
+
+        for payload in injection_payloads:
+            try:
+                # Send payload in query parameter
+                response = await self._http_client.get(
+                    endpoint, params={"user": payload, "action": payload}
+                )
+                body_text = response.text.lower()
+
+                # Check if injected content appears reflected in response
+                if "injected_log_entry" in body_text or "fake log entry" in body_text:
+                    findings.append(
+                        RawFinding(
+                            check="api-log-injection",
+                            category="security",
+                            location=endpoint,
+                            evidence=(
+                                f"Log injection payload reflected in response. "
+                                f"Payload: '{payload[:50]}', Status: {response.status_code}"
+                            ),
+                            context={
+                                "payload": payload,
+                                "status_code": response.status_code,
+                                "vulnerability_type": "audit-log-manipulation",
+                            },
+                        )
+                    )
+                    break
+
+            except httpx.RequestError:
+                pass
+
+        # Test with newline in custom headers
+        try:
+            response = await self._http_client.get(
+                endpoint,
+                headers={"X-Custom-User": "admin\r\nX-Injected: true"},
+            )
+            if response.status_code not in (400, 431):
+                # Server accepted header with newline - potential CRLF injection
+                findings.append(
+                    RawFinding(
+                        check="api-log-injection",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Server accepted header with CRLF characters "
+                            f"(status: {response.status_code}). Potential log injection."
+                        ),
+                        context={
+                            "test_type": "crlf_header",
+                            "status_code": response.status_code,
+                            "vulnerability_type": "audit-log-manipulation",
+                        },
+                    )
+                )
+        except httpx.RequestError:
+            pass
+
+        return findings
+
+    # --- Task 2: CAPTCHA Bypass ---
+
+    async def _test_captcha_bypass(self, endpoint: str) -> list[RawFinding]:
+        """Test if auth/registration endpoints can be accessed without CAPTCHA.
+
+        POSTs to common auth endpoints without any CAPTCHA token to check
+        if they are bypassable.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing CAPTCHA bypass for {endpoint}")
+
+        # Common auth/registration endpoint paths
+        auth_paths = [
+            f"{endpoint}/login",
+            f"{endpoint}/register",
+            f"{endpoint}/signup",
+            f"{endpoint}/auth/login",
+            f"{endpoint}/auth/register",
+            f"{endpoint}/api/login",
+            f"{endpoint}/api/register",
+        ]
+
+        for auth_path in auth_paths:
+            try:
+                # POST without CAPTCHA token
+                response = await self._http_client.post(
+                    auth_path,
+                    json={"username": "test", "password": "test123"},
+                )
+                # If response is success without CAPTCHA, flag it
+                if response.status_code in (200, 201):
+                    findings.append(
+                        RawFinding(
+                            check="captcha-bypass",
+                            category="security",
+                            location=auth_path,
+                            evidence=(
+                                f"Auth endpoint returned {response.status_code} "
+                                f"without CAPTCHA token. Endpoint may be bypassable."
+                            ),
+                            context={
+                                "status_code": response.status_code,
+                                "vulnerability_type": "captcha-bypass",
+                            },
+                        )
+                    )
+            except httpx.RequestError:
+                pass  # Endpoint doesn't exist, skip
+
+        return findings
+
+    # --- Task 3: HTTP Request Smuggling ---
+
+    async def _test_http_request_smuggling(self, endpoint: str) -> list[RawFinding]:
+        """Test for HTTP request smuggling (CL.TE / TE.CL).
+
+        Sends requests with conflicting Content-Length and Transfer-Encoding
+        headers to detect desync vulnerabilities.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing HTTP request smuggling for {endpoint}")
+
+        # CL.TE probe: Content-Length says short, Transfer-Encoding says chunked
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                headers={
+                    "Content-Length": "4",
+                    "Transfer-Encoding": "chunked",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                content=b"0\r\n\r\nSMUGGLED",
+            )
+            # Unexpected responses may indicate vulnerability
+            if response.status_code in (400, 505):
+                body = response.text.lower()
+                if "invalid" in body or "bad request" in body:
+                    findings.append(
+                        RawFinding(
+                            check="http-request-smuggling-cl-te",
+                            category="security",
+                            location=endpoint,
+                            evidence=(
+                                f"CL.TE probe triggered error response ({response.status_code}). "
+                                f"Server may be vulnerable to request smuggling."
+                            ),
+                            context={
+                                "probe_type": "CL.TE",
+                                "status_code": response.status_code,
+                                "vulnerability_type": "http-request-smuggling",
+                            },
+                        )
+                    )
+        except httpx.RequestError:
+            pass
+
+        # TE.CL probe: obfuscated Transfer-Encoding
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                headers={
+                    "Content-Length": "50",
+                    "Transfer-Encoding": "xchunked",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                content=b"0\r\n\r\n",
+            )
+            if response.status_code in (400, 505):
+                body = response.text.lower()
+                if "invalid" in body or "bad request" in body:
+                    findings.append(
+                        RawFinding(
+                            check="http-request-smuggling-te-cl",
+                            category="security",
+                            location=endpoint,
+                            evidence=(
+                                f"TE.CL probe triggered error response ({response.status_code}). "
+                                f"Server may be vulnerable to request smuggling."
+                            ),
+                            context={
+                                "probe_type": "TE.CL",
+                                "status_code": response.status_code,
+                                "vulnerability_type": "http-request-smuggling",
+                            },
+                        )
+                    )
+        except httpx.RequestError:
+            pass
+
+        return findings
+
+    # --- Task 4: Case Sensitivity ---
+
+    async def _test_case_sensitivity(self, endpoint: str) -> list[RawFinding]:
+        """Test for case-sensitive route/auth bypass.
+
+        Sends the same request with URL path variations (original, uppercase,
+        mixed case) and compares HTTP status codes.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing case sensitivity for {endpoint}")
+
+        from urllib.parse import urlparse
+
+        parsed = urlparse(endpoint)
+        path = parsed.path
+
+        if not path or path == "/":
+            return findings
+
+        # Generate case variations
+        variations = [
+            ("original", endpoint),
+            ("uppercase", endpoint.replace(path, path.upper())),
+            ("mixed", endpoint.replace(path, path.title())),
+        ]
+
+        status_codes: dict[str, int] = {}
+        for variant_name, variant_url in variations:
+            try:
+                response = await self._http_client.get(variant_url)
+                status_codes[variant_name] = response.status_code
+            except httpx.RequestError:
+                status_codes[variant_name] = -1
+
+        # Check if status codes differ (potential bypass)
+        original_status = status_codes.get("original", -1)
+        for variant_name in ("uppercase", "mixed"):
+            variant_status = status_codes.get(variant_name, -1)
+            if variant_status == -1 or original_status == -1:
+                continue
+            # If original is forbidden but variant is accessible
+            if original_status in (401, 403) and variant_status in range(200, 300):
+                findings.append(
+                    RawFinding(
+                        check="case-sensitive-route-bypass",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Case sensitivity bypass detected: original path "
+                            f"returns {original_status}, {variant_name} variant "
+                            f"returns {variant_status}"
+                        ),
+                        context={
+                            "original_status": original_status,
+                            "variant_status": variant_status,
+                            "variant_type": variant_name,
+                            "vulnerability_type": "case-sensitivity",
+                        },
+                    )
+                )
+            # If status codes differ significantly
+            elif abs(original_status - variant_status) >= 100 and variant_status > 0:
+                findings.append(
+                    RawFinding(
+                        check="case-sensitive-auth-bypass",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Inconsistent case handling: original={original_status}, "
+                            f"{variant_name}={variant_status}"
+                        ),
+                        context={
+                            "original_status": original_status,
+                            "variant_status": variant_status,
+                            "variant_type": variant_name,
+                            "vulnerability_type": "case-sensitivity",
+                        },
+                    )
+                )
+
+        # Test Authorization header casing
+        auth_headers = [
+            ("Authorization", "Bearer test-token"),
+            ("authorization", "Bearer test-token"),
+            ("AUTHORIZATION", "Bearer test-token"),
+        ]
+        auth_statuses: list[int] = []
+        for header_name, header_value in auth_headers:
+            try:
+                response = await self._http_client.get(
+                    endpoint, headers={header_name: header_value}
+                )
+                auth_statuses.append(response.status_code)
+            except httpx.RequestError:
+                auth_statuses.append(-1)
+
+        # If different header casings produce different results
+        valid_statuses = [s for s in auth_statuses if s > 0]
+        if len(set(valid_statuses)) > 1:
+            findings.append(
+                RawFinding(
+                    check="case-sensitive-auth-bypass",
+                    category="security",
+                    location=endpoint,
+                    evidence=(
+                        f"Authorization header case sensitivity detected. "
+                        f"Different casings produce different status codes: {valid_statuses}"
+                    ),
+                    context={
+                        "status_codes": valid_statuses,
+                        "vulnerability_type": "case-sensitivity",
+                    },
+                )
+            )
+
+        return findings
+
+    # --- Task 5: JSON Hijacking ---
+
+    async def _test_json_hijacking(self, endpoint: str) -> list[RawFinding]:
+        """Test for JSON hijacking vulnerabilities.
+
+        Checks if the endpoint returns top-level JSON arrays without proper
+        protections (CSRF headers, JSON prefix mitigations).
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing JSON hijacking for {endpoint}")
+
+        try:
+            response = await self._http_client.get(endpoint)
+        except httpx.RequestError:
+            return findings
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            return findings
+
+        body = response.text.strip()
+
+        # Check if response is a top-level JSON array
+        if body.startswith("["):
+            # Check for JSON hijacking mitigations
+            has_prefix = (
+                body.startswith(")]}',\n")
+                or body.startswith("while(1);")
+                or body.startswith("for(;;);")
+            )
+
+            if not has_prefix:
+                findings.append(
+                    RawFinding(
+                        check="json-hijacking-top-level-array",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Endpoint returns top-level JSON array without "
+                            f"anti-hijacking prefix. Content-Type: {content_type}"
+                        ),
+                        context={
+                            "vulnerability_type": "json-hijacking",
+                            "content_type": content_type,
+                        },
+                    )
+                )
+
+            # Check for missing CSRF protection headers
+            x_frame = response.headers.get("x-frame-options")
+            csp = response.headers.get("content-security-policy")
+            cors = response.headers.get("access-control-allow-origin")
+
+            if not x_frame and not csp:
+                findings.append(
+                    RawFinding(
+                        check="json-hijacking-no-prefix",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"JSON array endpoint missing X-Frame-Options and CSP headers. "
+                            f"Vulnerable to cross-origin data theft."
+                        ),
+                        context={
+                            "vulnerability_type": "json-hijacking",
+                            "missing_headers": ["X-Frame-Options", "Content-Security-Policy"],
+                        },
+                    )
+                )
+
+            # Check if accessible cross-origin
+            if cors == "*":
+                findings.append(
+                    RawFinding(
+                        check="json-hijacking-no-prefix",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"JSON array endpoint has Access-Control-Allow-Origin: *. "
+                            f"Data accessible from any origin."
+                        ),
+                        context={
+                            "vulnerability_type": "json-hijacking",
+                            "cors": cors,
+                        },
+                    )
+                )
+
+        return findings
