@@ -71,7 +71,7 @@ Analysis Mode: WEB
 Target: {url}
 
 You are reviewing findings from an automated web analysis of the target URL above.
-The analysis checked security headers, form security (CSRF), SEO elements, accessibility compliance, performance signals, and link integrity.
+The analysis checked security headers, form security (CSRF), SEO elements, accessibility compliance, performance signals, link integrity, CAPTCHA presence, HTTP request smuggling indicators, case-sensitivity access controls, JSON hijacking vectors, open redirect parameters, server version/technology disclosure in headers, and DOM-based XSS sinks.
 
 Your task is to classify and enrich the following raw findings into structured issues with severity ratings, descriptions, evidence, and actionable recommendations.
 
@@ -99,7 +99,7 @@ Analysis Mode: CODE
 Target: {filepath}
 
 You are reviewing findings from an automated code analysis of the target path above.
-The analysis checked for security vulnerabilities (injection, hardcoded secrets, insecure deserialization, path traversal), bug risks (null dereferences, uncaught exceptions, race conditions, off-by-one errors), code quality (dead code, duplication, complexity, magic numbers), test coverage gaps, and dependency risks.
+The analysis checked for security vulnerabilities (injection, hardcoded secrets, insecure deserialization, path traversal), bug risks (null dereferences, uncaught exceptions, race conditions, off-by-one errors), code quality (dead code, duplication, complexity, magic numbers), test coverage gaps, dependency risks (typosquatting, deprecated packages, wildcard imports), known CVE-affected packages, weak or missing password policy enforcement, audit log manipulation patterns, and case-sensitivity issues in auth/routing comparisons.
 
 Your task is to classify and enrich the following raw findings into structured issues with severity ratings, descriptions, evidence, and actionable recommendations. Include code-specific context such as file paths and line numbers in your evidence and recommendations.
 
@@ -127,7 +127,7 @@ Analysis Mode: API
 Target: {endpoint}
 
 You are reviewing findings from an automated API security analysis of the target endpoint above.
-The analysis tested authentication enforcement, response integrity (information leakage, status code mismatches), schema conformance, injection vulnerabilities (SQL, NoSQL, command injection), and rate limiting.
+The analysis tested authentication enforcement, response integrity (information leakage, status code mismatches), schema conformance, injection vulnerabilities (SQL, NoSQL, command injection), rate limiting, audit log manipulation, CAPTCHA bypass, HTTP request smuggling, case-sensitivity route bypass, JSON hijacking, open redirect via query parameters, server version/technology disclosure in headers, internal IP and domain leakage in response bodies, and application-level DoS vectors (missing payload size limits, JSON depth limits).
 
 Your task is to classify and enrich the following raw findings into structured issues with severity ratings, descriptions, evidence, and actionable recommendations. Include endpoint paths and HTTP details in your evidence.
 
