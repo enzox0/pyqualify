@@ -11,7 +11,7 @@ from __future__ import annotations
 
 
 import asyncio
-
+import re
 
 import time
 
@@ -645,6 +645,24 @@ class WebAnalyzer:
 
 
                     findings.extend(json_hijack_findings)
+
+
+                if tool_selector.is_enabled("open-redirect"):
+                    redirect_findings = await self._check_open_redirect(soup, target)
+                    findings.extend(redirect_findings)
+
+
+                if tool_selector.is_enabled("dom-xss"):
+                    dom_xss_findings = await self._check_dom_xss(soup)
+                    findings.extend(dom_xss_findings)
+
+
+        # Phase 4b: Header-based checks that need the response object
+        if response is not None and response.status_code < 400:
+            tool_selector_hdr = ToolSelector.from_config("web", config)
+            if tool_selector_hdr.is_enabled("server-version-disclosure"):
+                version_findings = await self._check_server_version_disclosure(response)
+                findings.extend(version_findings)
 
 
 
@@ -2810,6 +2828,219 @@ class WebAnalyzer:
 
         except (asyncio.TimeoutError, httpx.RequestError):
             pass
+
+        return findings
+
+    # --- Open Redirect Detection ---
+
+    async def _check_open_redirect(self, html: BeautifulSoup, target_url: str) -> list[RawFinding]:
+        """Detect open redirect vectors in HTML forms and links.
+
+        Checks for redirect/return_url/next parameters in forms and links
+        that could be abused for phishing via redirection.
+        """
+        findings: list[RawFinding] = []
+
+        # Redirect parameter names commonly abused
+        redirect_params = [
+            "redirect", "redirect_uri", "redirect_url", "return", "return_url",
+            "returnto", "next", "url", "goto", "target", "destination", "redir",
+            "continue", "forward",
+        ]
+
+        # Check forms for redirect parameters
+        forms = html.find_all("form")
+        for form in forms:
+            action = form.get("action") or ""
+            for param in redirect_params:
+                if param in action.lower():
+                    findings.append(RawFinding(
+                        check="open-redirect-form-action",
+                        category="security",
+                        location=action[:200],
+                        evidence=(
+                            f"Form action contains redirect parameter '{param}': "
+                            f"action='{action[:150]}'"
+                        ),
+                        context={"severity_hint": "medium", "vulnerability_type": "open-redirect", "param": param},
+                    ))
+                    break
+
+            # Check hidden inputs for redirect values
+            hidden_inputs = form.find_all("input", {"type": "hidden"})
+            for inp in hidden_inputs:
+                name = (inp.get("name") or "").lower()
+                value = inp.get("value") or ""
+                if any(p == name for p in redirect_params):
+                    # Flag if value looks like an external URL
+                    if value.startswith("http") or value.startswith("//"):
+                        findings.append(RawFinding(
+                            check="open-redirect-hidden-input",
+                            category="security",
+                            location=action[:200] or "[form]",
+                            evidence=(
+                                f"Hidden input '{name}' contains external URL value: '{value[:100]}'. "
+                                f"Could be abused for open redirect."
+                            ),
+                            context={"severity_hint": "high", "vulnerability_type": "open-redirect", "param": name},
+                        ))
+
+        # Check anchor links for redirect parameters pointing to external domains
+        from urllib.parse import urlparse, parse_qs
+        base_domain = urlparse(target_url).netloc
+
+        anchors = html.find_all("a", href=True)
+        for anchor in anchors:
+            href = anchor.get("href", "")
+            if not href or href.startswith("#"):
+                continue
+            try:
+                parsed = urlparse(href)
+                qs = parse_qs(parsed.query)
+                for param in redirect_params:
+                    if param in qs:
+                        values = qs[param]
+                        for val in values:
+                            val_parsed = urlparse(val)
+                            if val_parsed.netloc and val_parsed.netloc != base_domain:
+                                findings.append(RawFinding(
+                                    check="open-redirect-link",
+                                    category="security",
+                                    location=href[:200],
+                                    evidence=(
+                                        f"Link contains redirect parameter '{param}' pointing to "
+                                        f"external domain '{val_parsed.netloc}': {href[:150]}"
+                                    ),
+                                    context={"severity_hint": "high", "vulnerability_type": "open-redirect", "param": param},
+                                ))
+            except Exception:
+                continue
+
+        return findings
+
+    # --- Server Version / Technology Disclosure ---
+
+    async def _check_server_version_disclosure(self, response: httpx.Response) -> list[RawFinding]:
+        """Detect server version and technology information in response headers.
+
+        Checks Server, X-Powered-By, X-AspNet-Version, X-Generator and similar
+        headers that leak version information useful to attackers.
+        """
+        findings: list[RawFinding] = []
+        url = str(response.url)
+
+        disclosure_headers = {
+            "Server": "server-version-disclosure",
+            "X-Powered-By": "technology-disclosure",
+            "X-AspNet-Version": "aspnet-version-disclosure",
+            "X-AspNetMvc-Version": "aspnet-mvc-version-disclosure",
+            "X-Generator": "generator-disclosure",
+            "X-Drupal-Cache": "cms-disclosure",
+            "X-Joomla-Version": "cms-version-disclosure",
+            "X-WordPress-Version": "cms-version-disclosure",
+        }
+
+        # Version pattern: digits with dots (e.g. Apache/2.4.51, PHP/8.1.0)
+        version_pattern = r'\d+\.\d+'
+
+        for header_name, check_name in disclosure_headers.items():
+            value = response.headers.get(header_name)
+            if not value:
+                continue
+
+            # Flag if value contains a version number or known tech name
+            has_version = bool(re.search(version_pattern, value))
+            tech_keywords = [
+                "apache", "nginx", "iis", "php", "asp", "express", "django",
+                "rails", "tomcat", "jetty", "gunicorn", "uvicorn", "werkzeug",
+                "python", "ruby", "java", "node", "microsoft",
+            ]
+            has_tech = any(kw in value.lower() for kw in tech_keywords)
+
+            if has_version or has_tech:
+                findings.append(RawFinding(
+                    check=check_name,
+                    category="security",
+                    location=url,
+                    evidence=(
+                        f"Header '{header_name}' discloses version/technology: '{value}'. "
+                        f"Attackers can use this to target known vulnerabilities."
+                    ),
+                    context={"severity_hint": "low", "header": header_name, "value": value},
+                ))
+
+        return findings
+
+    # --- DOM-based / Self-XSS Detection ---
+
+    async def _check_dom_xss(self, html: BeautifulSoup) -> list[RawFinding]:
+        """Detect DOM-based XSS sinks that read from URL fragments or query strings.
+
+        Looks for patterns like document.URL, location.hash, location.search
+        being passed to innerHTML, document.write, or eval without sanitization.
+        """
+        findings: list[RawFinding] = []
+
+        # DOM sources (user-controlled input)
+        dom_sources = [
+            "location.hash", "location.search", "location.href",
+            "document.url", "document.referrer", "window.name",
+        ]
+
+        # DOM sinks (dangerous output functions)
+        dom_sinks = [
+            "innerhtml", "outerhtml", "document.write", "document.writeln",
+            "eval(", "settimeout(", "setinterval(", "execscript(",
+            ".html(", "insertadjacenthtml",
+        ]
+
+        scripts = html.find_all("script")
+        for script in scripts:
+            if script.get("src"):
+                continue  # Skip external scripts
+            content = script.get_text()
+            if not content:
+                continue
+
+            content_lower = content.lower()
+
+            # Check if script reads from a DOM source
+            has_source = any(src in content_lower for src in dom_sources)
+            if not has_source:
+                continue
+
+            # Check if it also writes to a dangerous sink
+            for sink in dom_sinks:
+                if sink in content_lower:
+                    # Check for sanitization patterns
+                    sanitization_patterns = [
+                        "dompurify", "sanitize", "escapehtml", "htmlencode",
+                        "encodeuri", "encodeuricomponent", "textcontent",
+                    ]
+                    has_sanitization = any(s in content_lower for s in sanitization_patterns)
+
+                    if not has_sanitization:
+                        # Find the source used
+                        source_used = next(
+                            (src for src in dom_sources if src in content_lower), "unknown"
+                        )
+                        findings.append(RawFinding(
+                            check="dom-based-xss",
+                            category="security",
+                            location="<script> (inline)",
+                            evidence=(
+                                f"Inline script reads from DOM source '{source_used}' "
+                                f"and writes to sink '{sink}' without apparent sanitization. "
+                                f"Potential DOM-based XSS."
+                            ),
+                            context={
+                                "severity_hint": "high",
+                                "vulnerability_type": "dom-xss",
+                                "source": source_used,
+                                "sink": sink,
+                            },
+                        ))
+                        break  # One finding per script block
 
         return findings
 

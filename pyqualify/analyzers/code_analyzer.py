@@ -390,6 +390,57 @@ DEPRECATED_PACKAGES = [
 ]
 
 
+# Known vulnerable packages with CVE references (not exhaustive, covers high-profile cases)
+KNOWN_VULNERABLE_PACKAGES: dict[str, str] = {
+    # Python
+    "pyyaml": "CVE-2017-18342 (arbitrary code execution via yaml.load)",
+    "pillow": "CVE-2021-25287 (heap buffer overflow in TIFF decoding)",
+    "requests": "CVE-2023-32681 (proxy credential leakage via Proxy-Authorization)",
+    "urllib3": "CVE-2023-43804 (cookie leakage via redirect)",
+    "cryptography": "CVE-2023-49083 (NULL pointer dereference in PKCS12)",
+    "paramiko": "CVE-2023-48795 (Terrapin SSH prefix truncation attack)",
+    "werkzeug": "CVE-2023-46136 (DoS via multipart/form-data parsing)",
+    "flask": "CVE-2023-30861 (cookie leakage via response caching)",
+    "django": "CVE-2024-27351 (ReDoS in django.utils.text.Truncator)",
+    "sqlalchemy": "CVE-2019-7164 (SQL injection via order_by)",
+    "jinja2": "CVE-2024-34064 (XSS via xmlattr filter)",
+    "aiohttp": "CVE-2024-23334 (path traversal in static file serving)",
+    "starlette": "CVE-2023-29159 (path traversal in StaticFiles)",
+    "fastapi": "CVE-2024-24762 (ReDoS via multipart/form-data)",
+    # JavaScript / Node
+    "lodash": "CVE-2021-23337 (command injection via template)",
+    "axios": "CVE-2023-45857 (CSRF via cross-site request forgery)",
+    "moment": "CVE-2022-24785 (path traversal in locale loading)",
+    "express": "CVE-2022-24999 (open redirect via qs prototype pollution)",
+    "jsonwebtoken": "CVE-2022-23529 (arbitrary file write via secretOrPublicKey)",
+    "node-fetch": "CVE-2022-0235 (exposure of sensitive information to unauthorized actor)",
+    "minimist": "CVE-2021-44906 (prototype pollution)",
+    "qs": "CVE-2022-24999 (prototype pollution)",
+    "semver": "CVE-2022-25883 (ReDoS)",
+    "tough-cookie": "CVE-2023-26136 (prototype pollution)",
+    "word-wrap": "CVE-2023-26115 (ReDoS)",
+    # Java
+    "log4j": "CVE-2021-44228 (Log4Shell - remote code execution via JNDI lookup)",
+    "log4j-core": "CVE-2021-44228 (Log4Shell - remote code execution via JNDI lookup)",
+    "spring-core": "CVE-2022-22965 (Spring4Shell - remote code execution)",
+    "jackson-databind": "CVE-2022-42003 (deep wrapper array nesting DoS)",
+    "commons-text": "CVE-2022-42889 (Text4Shell - remote code execution)",
+    "commons-collections": "CVE-2015-6420 (Java deserialization remote code execution)",
+    "xstream": "CVE-2021-39144 (remote code execution via deserialization)",
+    "struts2": "CVE-2023-50164 (path traversal leading to RCE)",
+    # Ruby
+    "rails": "CVE-2023-22795 (ReDoS in Accept header parsing)",
+    "nokogiri": "CVE-2022-24836 (ReDoS in HTML encoding detection)",
+    "rack": "CVE-2022-44571 (ReDoS in multipart boundary parsing)",
+    # PHP
+    "guzzle": "CVE-2022-31090 (SSRF via change in port to standard port)",
+    "symfony": "CVE-2022-24894 (cookie leakage via HttpCache)",
+    # Go
+    "golang.org/x/net": "CVE-2022-41723 (HTTP/2 rapid reset attack)",
+    "golang.org/x/crypto": "CVE-2020-29652 (nil pointer dereference in SSH)",
+}
+
+
 class CodeAnalyzer:
     """Analyzes source code for security, quality, bugs, tests, and dependencies."""
 
@@ -553,6 +604,10 @@ class CodeAnalyzer:
             findings.extend(self._check_audit_log(source, filepath))
         if ts.is_enabled("case-sensitivity"):
             findings.extend(self._check_case_sensitivity(source, filepath))
+        if ts.is_enabled("known-vulnerabilities"):
+            findings.extend(self._check_known_vulnerabilities(source, filepath, language))
+        if ts.is_enabled("password-policy"):
+            findings.extend(self._check_password_policy(source, filepath))
         return findings
 
     # --- Security Checks (Task 6.2 - Language-aware) ---
@@ -1286,3 +1341,151 @@ class CodeAnalyzer:
                 current_row.append(min(insertions, deletions, substitutions))
             previous_row = current_row
         return previous_row[-1]
+
+    # --- Known Vulnerable Packages ---
+
+    def _check_known_vulnerabilities(
+        self, source: str, filepath: str, language: str = "unknown"
+    ) -> list[RawFinding]:
+        """Detect imports of packages with known CVEs.
+
+        Checks imported package names against a registry of packages with
+        publicly disclosed vulnerabilities.
+        """
+        findings: list[RawFinding] = []
+        lines = source.splitlines()
+
+        if language == "unknown":
+            language = self._detect_language(filepath)
+
+        import_pats = IMPORT_PATTERNS.get(language, IMPORT_PATTERNS.get("Python", []))
+
+        for line_num, line in enumerate(lines, start=1):
+            location = f"{filepath}:{line_num}"
+            stripped = line.strip()
+
+            for imp_pattern in import_pats:
+                import_match = re.match(imp_pattern, stripped)
+                if import_match:
+                    groups = [g for g in import_match.groups() if g]
+                    if groups:
+                        package = groups[0]
+                        top_package = package.split(".")[0].split("/")[0].lower()
+                        cve_info = KNOWN_VULNERABLE_PACKAGES.get(top_package)
+                        if cve_info:
+                            findings.append(RawFinding(
+                                check="known-vulnerable-package",
+                                category="dependencies",
+                                location=location,
+                                evidence=(
+                                    f"Package '{top_package}' has known vulnerability: {cve_info}. "
+                                    f"Verify you are using a patched version."
+                                ),
+                                context={
+                                    "package": top_package,
+                                    "cve_info": cve_info,
+                                    "vulnerability_type": "known-cve",
+                                    "severity_hint": "high",
+                                },
+                            ))
+                    break
+
+        return findings
+
+    # --- Weak Password Policy ---
+
+    def _check_password_policy(self, source: str, filepath: str) -> list[RawFinding]:
+        """Detect missing or weak password policy enforcement in authentication code.
+
+        Looks for password validation logic that lacks minimum length, complexity
+        requirements, or uses trivially weak thresholds.
+        """
+        findings: list[RawFinding] = []
+        lines = source.splitlines()
+
+        # Patterns that suggest password validation is happening
+        password_validation_patterns = [
+            r'(?:password|passwd|pwd).*(?:len|length|size)\s*[<>]=?\s*\d+',
+            r'(?:len|length|size)\s*\([^)]*(?:password|passwd|pwd)',
+            r'(?:validate|check|verify).*password',
+            r'password.*(?:valid|check|verify)',
+            r'(?:min|max).*(?:password|passwd).*(?:length|len)',
+        ]
+
+        # Patterns indicating weak thresholds (< 8 chars)
+        weak_length_pattern = re.compile(
+            r'(?:password|passwd|pwd).*(?:len|length)\s*[<>]=?\s*([1-7])\b'
+            r'|(?:len|length)\s*\([^)]*(?:password|passwd|pwd)[^)]*\)\s*[<>]=?\s*([1-7])\b',
+            re.IGNORECASE,
+        )
+
+        # Patterns indicating no complexity check (no uppercase/digit/special char requirement)
+        complexity_patterns = [
+            r'(?:password|passwd|pwd).*(?:upper|lower|digit|special|symbol|number)',
+            r'(?:upper|lower|digit|special|symbol|number).*(?:password|passwd|pwd)',
+            r'[A-Z].*password|password.*[A-Z]',
+            r'(?:re\.search|re\.match|re\.compile).*(?:password|passwd)',
+        ]
+
+        has_password_validation = False
+        has_complexity_check = False
+        weak_threshold_lines: list[tuple[int, str]] = []
+
+        for line_num, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if stripped.startswith(("#", "//")):
+                continue
+
+            # Check if this file does password validation
+            for pattern in password_validation_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    has_password_validation = True
+                    break
+
+            # Check for weak length threshold
+            weak_match = weak_length_pattern.search(line)
+            if weak_match:
+                threshold = weak_match.group(1) or weak_match.group(2)
+                weak_threshold_lines.append((line_num, threshold or "?"))
+
+            # Check for complexity enforcement
+            for pattern in complexity_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    has_complexity_check = True
+                    break
+
+        # Report weak thresholds
+        for line_num, threshold in weak_threshold_lines:
+            findings.append(RawFinding(
+                check="weak-password-length-policy",
+                category="security",
+                location=f"{filepath}:{line_num}",
+                evidence=(
+                    f"Password length threshold of {threshold} characters is below "
+                    f"the recommended minimum of 8. Weak passwords increase brute-force risk."
+                ),
+                context={
+                    "threshold": threshold,
+                    "recommended_minimum": 8,
+                    "vulnerability_type": "weak-password-policy",
+                    "severity_hint": "medium",
+                },
+            ))
+
+        # Report missing complexity check when password validation exists
+        if has_password_validation and not has_complexity_check:
+            findings.append(RawFinding(
+                check="missing-password-complexity-policy",
+                category="security",
+                location=filepath,
+                evidence=(
+                    f"Password validation found but no complexity requirements detected "
+                    f"(uppercase, digits, special characters). Weak passwords may be accepted."
+                ),
+                context={
+                    "vulnerability_type": "weak-password-policy",
+                    "severity_hint": "low",
+                },
+            ))
+
+        return findings

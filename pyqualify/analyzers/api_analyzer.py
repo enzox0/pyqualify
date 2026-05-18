@@ -154,6 +154,10 @@ class APIAnalyzer:
             ("http_request_smuggling", "http-request-smuggling", self._test_http_request_smuggling),
             ("case_sensitivity", "case-sensitivity", self._test_case_sensitivity),
             ("json_hijacking", "json-hijacking", self._test_json_hijacking),
+            ("open_redirect", "open-redirect", self._test_open_redirect),
+            ("server_version_disclosure", "server-version-disclosure", self._test_server_version_disclosure),
+            ("internal_ip_leakage", "internal-ip-leakage", self._test_internal_ip_leakage),
+            ("application_dos", "application-dos", self._test_application_dos),
         ]
 
         # Build tool selector from config
@@ -1525,5 +1529,295 @@ class APIAnalyzer:
                         },
                     )
                 )
+
+        return findings
+
+    # --- Open Redirect ---
+
+    async def _test_open_redirect(self, endpoint: str) -> list[RawFinding]:
+        """Test for open redirect vulnerabilities via common redirect parameters.
+
+        Sends requests with external URLs in redirect-related query parameters
+        and checks if the server follows or reflects them.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing open redirect for {endpoint}")
+
+        redirect_params = [
+            "redirect", "redirect_uri", "redirect_url", "return", "return_url",
+            "returnto", "next", "url", "goto", "target", "destination", "redir",
+            "continue", "forward",
+        ]
+        external_url = "https://evil.example.com/phishing"
+
+        for param in redirect_params:
+            try:
+                response = await self._http_client.get(
+                    endpoint,
+                    params={param: external_url},
+                    follow_redirects=False,
+                )
+                # Flag if server issues a redirect to the external URL
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location", "")
+                    if "evil.example.com" in location or external_url in location:
+                        findings.append(
+                            RawFinding(
+                                check="open-redirect",
+                                category="security",
+                                location=f"{endpoint}?{param}={external_url}",
+                                evidence=(
+                                    f"Endpoint redirects to attacker-controlled URL via "
+                                    f"parameter '{param}'. Location: {location[:200]}"
+                                ),
+                                context={
+                                    "param": param,
+                                    "location": location[:200],
+                                    "status_code": response.status_code,
+                                    "vulnerability_type": "open-redirect",
+                                    "severity_hint": "medium",
+                                },
+                            )
+                        )
+                        break  # One finding is enough
+            except httpx.RequestError:
+                pass
+
+        return findings
+
+    # --- Server Version / Technology Disclosure ---
+
+    async def _test_server_version_disclosure(self, endpoint: str) -> list[RawFinding]:
+        """Test for server version and technology information in response headers.
+
+        Checks Server, X-Powered-By, X-AspNet-Version and similar headers
+        that leak version information useful to attackers.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing server version disclosure for {endpoint}")
+
+        import re as _re
+
+        try:
+            response = await self._http_client.get(endpoint)
+        except httpx.RequestError as e:
+            self._logger.warning(self._MODULE, f"Cannot reach endpoint for version disclosure test: {e}")
+            return findings
+
+        disclosure_headers = {
+            "Server": "server-version-disclosure",
+            "X-Powered-By": "technology-disclosure",
+            "X-AspNet-Version": "aspnet-version-disclosure",
+            "X-AspNetMvc-Version": "aspnet-mvc-version-disclosure",
+            "X-Generator": "generator-disclosure",
+        }
+
+        version_pattern = _re.compile(r'\d+\.\d+')
+        tech_keywords = [
+            "apache", "nginx", "iis", "php", "asp", "express", "django",
+            "rails", "tomcat", "jetty", "gunicorn", "uvicorn", "werkzeug",
+            "python", "ruby", "java", "node", "microsoft",
+        ]
+
+        for header_name, check_name in disclosure_headers.items():
+            value = response.headers.get(header_name)
+            if not value:
+                continue
+
+            has_version = bool(version_pattern.search(value))
+            has_tech = any(kw in value.lower() for kw in tech_keywords)
+
+            if has_version or has_tech:
+                findings.append(
+                    RawFinding(
+                        check=check_name,
+                        category="response_integrity",
+                        location=endpoint,
+                        evidence=(
+                            f"Header '{header_name}' discloses version/technology: '{value}'. "
+                            f"Attackers can use this to target known vulnerabilities."
+                        ),
+                        context={
+                            "severity_hint": "low",
+                            "header": header_name,
+                            "value": value,
+                            "vulnerability_type": "information-disclosure",
+                        },
+                    )
+                )
+
+        return findings
+
+    # --- Internal IP / Domain Leakage ---
+
+    async def _test_internal_ip_leakage(self, endpoint: str) -> list[RawFinding]:
+        """Test for internal IP addresses and private domain names in API responses.
+
+        Scans response bodies for RFC 1918 private IP ranges and internal
+        hostnames that should not be exposed to external clients.
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing internal IP leakage for {endpoint}")
+
+        import re as _re
+
+        # RFC 1918 private IP ranges + loopback + link-local
+        private_ip_pattern = _re.compile(
+            r'\b(?:'
+            r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}'          # 10.0.0.0/8
+            r'|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}'  # 172.16.0.0/12
+            r'|192\.168\.\d{1,3}\.\d{1,3}'             # 192.168.0.0/16
+            r'|127\.\d{1,3}\.\d{1,3}\.\d{1,3}'         # 127.0.0.0/8 loopback
+            r'|169\.254\.\d{1,3}\.\d{1,3}'             # 169.254.0.0/16 link-local
+            r'|::1'                                      # IPv6 loopback
+            r'|fc[0-9a-f]{2}:'                          # IPv6 ULA
+            r')\b'
+        )
+
+        # Internal hostname patterns
+        internal_hostname_pattern = _re.compile(
+            r'\b(?:localhost|internal|intranet|corp|local|private|dev|staging|test)\b'
+            r'(?:\.\w+)*',
+            _re.IGNORECASE,
+        )
+
+        # Probe multiple paths
+        probe_paths = [
+            endpoint,
+            f"{endpoint}/health",
+            f"{endpoint}/status",
+            f"{endpoint}/debug",
+            f"{endpoint}/info",
+        ]
+
+        for path in probe_paths:
+            try:
+                response = await self._http_client.get(path)
+                body = response.text
+
+                # Check for private IPs
+                ip_matches = private_ip_pattern.findall(body)
+                if ip_matches:
+                    unique_ips = list(dict.fromkeys(ip_matches))[:5]
+                    findings.append(
+                        RawFinding(
+                            check="internal-ip-leakage",
+                            category="response_integrity",
+                            location=path,
+                            evidence=(
+                                f"Response body contains private/internal IP address(es): "
+                                f"{', '.join(unique_ips)}. These should not be exposed externally."
+                            ),
+                            context={
+                                "ips": unique_ips,
+                                "status_code": response.status_code,
+                                "vulnerability_type": "information-disclosure",
+                                "severity_hint": "low",
+                            },
+                        )
+                    )
+
+                # Check for internal hostnames
+                hostname_matches = internal_hostname_pattern.findall(body)
+                if hostname_matches:
+                    unique_hosts = list(dict.fromkeys(hostname_matches))[:5]
+                    findings.append(
+                        RawFinding(
+                            check="internal-domain-leakage",
+                            category="response_integrity",
+                            location=path,
+                            evidence=(
+                                f"Response body contains internal hostname(s): "
+                                f"{', '.join(unique_hosts)}. Internal infrastructure details exposed."
+                            ),
+                            context={
+                                "hostnames": unique_hosts,
+                                "status_code": response.status_code,
+                                "vulnerability_type": "information-disclosure",
+                                "severity_hint": "low",
+                            },
+                        )
+                    )
+
+            except httpx.RequestError:
+                pass
+
+        return findings
+
+    # --- Application-Level DoS Vectors ---
+
+    async def _test_application_dos(self, endpoint: str) -> list[RawFinding]:
+        """Test for application-level DoS vulnerabilities.
+
+        Checks for missing protections against:
+        - Oversized request payloads (no 413 response)
+        - Deeply nested JSON (no rejection of recursive structures)
+        - Missing request body size limits
+        """
+        findings: list[RawFinding] = []
+        self._logger.debug(self._MODULE, f"Testing application DoS vectors for {endpoint}")
+
+        # Test 1: Large payload — send 1MB body, expect 413 or rejection
+        large_payload = "A" * (1024 * 1024)  # 1MB
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                content=large_payload.encode(),
+                headers={"Content-Type": "text/plain"},
+            )
+            if response.status_code not in (400, 413, 414, 431):
+                findings.append(
+                    RawFinding(
+                        check="missing-payload-size-limit",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Endpoint accepted a 1MB payload without rejecting it "
+                            f"(status: {response.status_code}). No payload size limit detected."
+                        ),
+                        context={
+                            "payload_size_bytes": len(large_payload),
+                            "status_code": response.status_code,
+                            "vulnerability_type": "application-dos",
+                            "severity_hint": "medium",
+                        },
+                    )
+                )
+        except httpx.RequestError:
+            pass
+
+        # Test 2: Deeply nested JSON — 50 levels deep
+        nested: dict = {"x": None}
+        current = nested
+        for _ in range(50):
+            current["x"] = {"x": None}
+            current = current["x"]
+
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                json=nested,
+            )
+            if response.status_code not in (400, 413, 422):
+                findings.append(
+                    RawFinding(
+                        check="missing-json-depth-limit",
+                        category="security",
+                        location=endpoint,
+                        evidence=(
+                            f"Endpoint accepted a 50-level deeply nested JSON object "
+                            f"(status: {response.status_code}). No JSON depth limit detected. "
+                            f"Deep nesting can cause stack overflows or excessive CPU usage."
+                        ),
+                        context={
+                            "nesting_depth": 50,
+                            "status_code": response.status_code,
+                            "vulnerability_type": "application-dos",
+                            "severity_hint": "medium",
+                        },
+                    )
+                )
+        except httpx.RequestError:
+            pass
 
         return findings
