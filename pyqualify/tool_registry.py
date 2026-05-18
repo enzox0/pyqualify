@@ -29,6 +29,8 @@ TOOL_REGISTRY: dict[str, dict[str, str]] = {
         "dependencies": "Detect typosquatting, deprecated packages, wildcard imports",
         "audit-log": "Detect log injection, log suppression, audit log deletion",
         "case-sensitivity": "Detect missing case normalization in auth/routing comparisons",
+        "known-vulnerabilities": "Detect imports of packages with known CVEs",
+        "password-policy": "Detect weak or missing password policy enforcement",
     },
     "web": {
         "security-headers": "Check for missing or misconfigured security headers",
@@ -41,6 +43,9 @@ TOOL_REGISTRY: dict[str, dict[str, str]] = {
         "smuggling-headers": "Check for Transfer-Encoding/Content-Length co-existence",
         "case-sensitivity": "Check if URL path casing changes bypass access controls",
         "json-hijacking": "Detect JSON hijacking vectors in HTML scripts",
+        "open-redirect": "Detect open redirect parameters in forms and links",
+        "server-version-disclosure": "Detect server version/technology in response headers",
+        "dom-xss": "Detect DOM-based XSS sinks reading from URL fragments or query strings",
     },
     "api": {
         "authentication": "Test authentication enforcement (no creds, expired/malformed tokens)",
@@ -53,6 +58,10 @@ TOOL_REGISTRY: dict[str, dict[str, str]] = {
         "http-request-smuggling": "Test for CL.TE / TE.CL request smuggling",
         "case-sensitivity": "Test for case-sensitive route/auth bypass",
         "json-hijacking": "Test for unprotected top-level JSON arrays",
+        "open-redirect": "Test for open redirect via common redirect parameters",
+        "server-version-disclosure": "Detect server version/technology in response headers",
+        "internal-ip-leakage": "Detect private IP addresses and internal hostnames in responses",
+        "application-dos": "Test for missing payload size and JSON depth limits",
     },
 }
 
