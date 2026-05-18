@@ -28,6 +28,20 @@ PyQualify is a command-line tool that performs automated quality assurance and s
 
 ## Installation
 
+### Via pip (recommended)
+
+```bash
+pip install pyqualify
+```
+
+### Via uv
+
+```bash
+uv add pyqualify
+```
+
+### From source
+
 ```bash
 git clone <repo-url> pyqualify
 cd pyqualify
@@ -74,8 +88,8 @@ Configuration is stored in `~/.pyqualify/config.toml`. Sensitive values (API key
 Run `setup` first, then launch the interactive menu:
 
 ```bash
-uv run pyqualify setup   # one-time configuration
-uv run pyqualify         # interactive mode selector
+pyqualify setup   # one-time configuration
+pyqualify         # interactive mode selector
 ```
 
 ```
