@@ -1,4 +1,4 @@
-﻿"""QAAI CLI main command group.
+"""QAAI CLI main command group.
 
 Provides the top-level CLI entry point with web, code, and api analysis
 commands, plus a config subgroup for managing configuration.
@@ -30,6 +30,7 @@ from pyqualify.models import AIConfig, AnalysisConfig, LogConfig
 from pyqualify.reporting.cli_formatter import CLIFormatter
 from pyqualify.reporting.html_generator import HTMLDashboardGenerator
 from pyqualify.reporting.pdf_generator import PDFReportGenerator, resolve_pdf_path
+from pyqualify.tool_registry import TOOL_REGISTRY, list_tools_formatted
 
 # -- Provider catalogue --------------------------------------------------------
 
@@ -399,6 +400,8 @@ def _resolve_analysis_config(
     config_manager: ConfigManager,
     pdf_output: bool,
     json_output: bool,
+    enabled_tools: list[str] | None = None,
+    disabled_tools: list[str] | None = None,
 ) -> AnalysisConfig:
     """Build an AnalysisConfig from config manager values and CLI options.
 
@@ -406,6 +409,8 @@ def _resolve_analysis_config(
         config_manager: The configuration manager.
         pdf_output: Whether to save a PDF report.
         json_output: Whether to output raw JSON.
+        enabled_tools: If set, only these tools will run.
+        disabled_tools: If set, these tools will be skipped.
 
     Returns:
         A resolved AnalysisConfig instance.
@@ -422,6 +427,8 @@ def _resolve_analysis_config(
         rate_limit_window=rate_limit_window,
         pdf_output=pdf_output,
         json_output=json_output,
+        enabled_tools=enabled_tools or [],
+        disabled_tools=disabled_tools or [],
     )
 
 
@@ -477,14 +484,24 @@ def setup() -> None:
 @click.argument("url")
 @click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
+@click.option("--only", "only_tools", multiple=True, help="Run ONLY these tools (comma-separated or repeated)")
+@click.option("--disable", "disable_tools", multiple=True, help="Disable specific tools (comma-separated or repeated)")
 @click.pass_context
-def web(ctx: click.Context, url: str, save_pdf: bool, json_output: bool) -> None:
-    """Analyze web page security, SEO, accessibility, and performance."""
+def web(ctx: click.Context, url: str, save_pdf: bool, json_output: bool, only_tools: tuple, disable_tools: tuple) -> None:
+    """Analyze web page security, SEO, accessibility, and performance.
+
+    Use --only to run specific tools only, or --disable to skip certain tools.
+    Run 'pyqualify tools web' to see available tools.
+    """
     try:
         url = validate_url(url)
 
+        # Parse tool selection (support comma-separated values)
+        enabled = [t.strip() for raw in only_tools for t in raw.split(",") if t.strip()]
+        disabled = [t.strip() for raw in disable_tools for t in raw.split(",") if t.strip()]
+
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output, enabled, disabled)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(WebAnalyzer)
@@ -533,14 +550,24 @@ def web(ctx: click.Context, url: str, save_pdf: bool, json_output: bool) -> None
 @click.argument("path")
 @click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
+@click.option("--only", "only_tools", multiple=True, help="Run ONLY these tools (comma-separated or repeated)")
+@click.option("--disable", "disable_tools", multiple=True, help="Disable specific tools (comma-separated or repeated)")
 @click.pass_context
-def code(ctx: click.Context, path: str, save_pdf: bool, json_output: bool) -> None:
-    """Analyze source code for security, quality, and test gaps."""
+def code(ctx: click.Context, path: str, save_pdf: bool, json_output: bool, only_tools: tuple, disable_tools: tuple) -> None:
+    """Analyze source code for security, quality, and test gaps.
+
+    Use --only to run specific tools only, or --disable to skip certain tools.
+    Run 'pyqualify tools code' to see available tools.
+    """
     try:
         path = validate_path(path)
 
+        # Parse tool selection (support comma-separated values)
+        enabled = [t.strip() for raw in only_tools for t in raw.split(",") if t.strip()]
+        disabled = [t.strip() for raw in disable_tools for t in raw.split(",") if t.strip()]
+
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output, enabled, disabled)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(CodeAnalyzer)
@@ -589,14 +616,24 @@ def code(ctx: click.Context, path: str, save_pdf: bool, json_output: bool) -> No
 @click.argument("base_url")
 @click.option("--pdf", "save_pdf", is_flag=True, default=False, help="Save PDF report to Documents/PyQualify/")
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
+@click.option("--only", "only_tools", multiple=True, help="Run ONLY these tools (comma-separated or repeated)")
+@click.option("--disable", "disable_tools", multiple=True, help="Disable specific tools (comma-separated or repeated)")
 @click.pass_context
-def api(ctx: click.Context, base_url: str, save_pdf: bool, json_output: bool) -> None:
-    """Analyze API endpoints for security and integrity."""
+def api(ctx: click.Context, base_url: str, save_pdf: bool, json_output: bool, only_tools: tuple, disable_tools: tuple) -> None:
+    """Analyze API endpoints for security and integrity.
+
+    Use --only to run specific tools only, or --disable to skip certain tools.
+    Run 'pyqualify tools api' to see available tools.
+    """
     try:
         base_url = validate_url(base_url)
 
+        # Parse tool selection (support comma-separated values)
+        enabled = [t.strip() for raw in only_tools for t in raw.split(",") if t.strip()]
+        disabled = [t.strip() for raw in disable_tools for t in raw.split(",") if t.strip()]
+
         config_manager = ConfigManager()
-        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output)
+        analysis_config = _resolve_analysis_config(config_manager, save_pdf, json_output, enabled, disabled)
         container = _build_container(config_manager)
 
         analyzer = container.resolve(APIAnalyzer)
@@ -639,6 +676,51 @@ def api(ctx: click.Context, base_url: str, save_pdf: bool, json_output: bool) ->
             err=True,
         )
         sys.exit(1)
+
+
+
+@cli.command("tools")
+@click.argument("category", required=False, default=None)
+def list_tools_cmd(category: str | None) -> None:
+    """List available analysis tools by category.
+
+    Shows all tools that can be enabled/disabled with --only and --disable.
+
+    \b
+    Categories: code, web, api
+    \b
+    Examples:
+      pyqualify tools          # List all tools
+      pyqualify tools code     # List code analysis tools
+      pyqualify tools api      # List API analysis tools
+    """
+    if category and category not in TOOL_REGISTRY:
+        click.echo(
+            click.style(f"  \u2716 Unknown category '{category}'. ", fg="red") +
+            click.style(f"Available: {', '.join(TOOL_REGISTRY.keys())}", fg="bright_black"),
+            err=True,
+        )
+        sys.exit(1)
+
+    click.echo(click.style("\n  PyQualify Available Tools", fg="white", bold=True))
+    click.echo(click.style("  " + "\u2500" * 50, fg="bright_black"))
+
+    categories = [category] if category else list(TOOL_REGISTRY.keys())
+    for cat in categories:
+        tools = TOOL_REGISTRY.get(cat, {})
+        click.echo(click.style(f"\n  {cat.upper()}", fg="cyan", bold=True) +
+                   click.style(f"  ({len(tools)} tools)", fg="bright_black"))
+        for name, desc in tools.items():
+            click.echo(
+                f"    {click.style(name, fg='green', bold=True):<35}"
+                f"{click.style(desc, fg='bright_black')}"
+            )
+
+    click.echo(click.style("\n  Usage:", fg="white", bold=True))
+    click.echo(click.style("    pyqualify api <url> --only injection,rate-limiting", fg="bright_black"))
+    click.echo(click.style("    pyqualify code <path> --disable test-gaps,quality", fg="bright_black"))
+    click.echo(click.style("    pyqualify web <url> --only security-headers", fg="bright_black"))
+    click.echo()
 
 
 @cli.group()
