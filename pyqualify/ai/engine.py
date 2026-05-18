@@ -90,10 +90,18 @@ class AIEngine:
 
     # ── Public interface ──────────────────────────────────────────────────────
 
+    # Maximum number of findings to send in a single LLM call.
+    # Keeps prompts small enough to avoid hitting output token limits.
+    _BATCH_SIZE: int = 8
+
     async def process_findings(
         self, findings: list[RawFinding], context: AnalysisContext
     ) -> list[Issue]:
-        """Process raw findings through the LLM with retry logic.
+        """Process raw findings through the LLM with batching and retry logic.
+
+        Findings are split into batches of at most _BATCH_SIZE to prevent the
+        LLM response from exceeding output token limits and producing truncated
+        JSON. Each batch is processed independently and results are merged.
 
         Args:
             findings: Raw findings from an analyzer.
@@ -105,6 +113,36 @@ class AIEngine:
         if not findings:
             return []
 
+        # Split into batches
+        batches = [
+            findings[i : i + self._BATCH_SIZE]
+            for i in range(0, len(findings), self._BATCH_SIZE)
+        ]
+
+        all_issues: list[Issue] = []
+        for batch_index, batch in enumerate(batches, start=1):
+            self._logger.debug(
+                "ai_engine",
+                f"Processing batch {batch_index}/{len(batches)} "
+                f"({len(batch)} findings)",
+            )
+            issues = await self._process_batch(batch, context)
+            all_issues.extend(issues)
+
+        return all_issues
+
+    async def _process_batch(
+        self, findings: list[RawFinding], context: AnalysisContext
+    ) -> list[Issue]:
+        """Process a single batch of findings with retry logic.
+
+        Args:
+            findings: A subset of raw findings to process.
+            context: Analysis context for prompt construction.
+
+        Returns:
+            Enriched Issue objects, or fallback INFO issues on total failure.
+        """
         prompt = self._build_prompt(findings, context)
         last_error: Exception | None = None
 
@@ -165,7 +203,88 @@ class AIEngine:
             timeout=self._config.timeout,
         )
         content = response.choices[0].message.content or ""
-        return json.loads(content)
+        return self._safe_json_loads(content)
+
+    @staticmethod
+    def _safe_json_loads(content: str) -> dict:
+        """Parse JSON, attempting to repair truncated responses before failing.
+
+        When a model hits its output token limit the JSON is cut off mid-string.
+        This method tries a best-effort repair by closing any open string,
+        array, and object brackets before raising the original error.
+
+        Args:
+            content: Raw JSON string from the LLM.
+
+        Returns:
+            Parsed dict.
+
+        Raises:
+            json.JSONDecodeError: If the content cannot be parsed even after repair.
+        """
+        # Strip markdown fences if present
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            stripped = "\n".join(
+                line for line in lines if not line.startswith("```")
+            ).strip()
+
+        # Fast path — valid JSON
+        original_error: json.JSONDecodeError | None = None
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError as e:
+            original_error = e
+
+        # Attempt repair: close any open string, then balance brackets/braces
+        repaired = stripped
+
+        # If we're inside an unterminated string, close it
+        # Count unescaped quotes to determine if we're mid-string
+        in_string = False
+        i = 0
+        while i < len(repaired):
+            ch = repaired[i]
+            if ch == "\\" and in_string:
+                i += 2  # skip escaped character
+                continue
+            if ch == '"':
+                in_string = not in_string
+            i += 1
+
+        if in_string:
+            repaired += '"'
+
+        # Balance open arrays and objects
+        stack: list[str] = []
+        in_string = False
+        i = 0
+        while i < len(repaired):
+            ch = repaired[i]
+            if ch == "\\" and in_string:
+                i += 2
+                continue
+            if ch == '"':
+                in_string = not in_string
+            elif not in_string:
+                if ch in ("{", "["):
+                    stack.append(ch)
+                elif ch == "}" and stack and stack[-1] == "{":
+                    stack.pop()
+                elif ch == "]" and stack and stack[-1] == "[":
+                    stack.pop()
+            i += 1
+
+        # Close in reverse order
+        for opener in reversed(stack):
+            repaired += "}" if opener == "{" else "]"
+
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            # Re-raise the original error for accurate diagnostics
+            raise original_error  # type: ignore[misc]
 
     async def _call_anthropic(self, prompt: str) -> dict:
         """Call the Anthropic Messages API (Claude)."""
@@ -185,16 +304,7 @@ class AIEngine:
                 content = block.text
                 break
 
-        # Claude may wrap JSON in markdown fences — strip them
-        content = content.strip()
-        if content.startswith("```"):
-            lines = content.splitlines()
-            content = "\n".join(
-                line for line in lines
-                if not line.startswith("```")
-            ).strip()
-
-        return json.loads(content)
+        return self._safe_json_loads(content)
 
     # ── Response parsing ──────────────────────────────────────────────────────
 
