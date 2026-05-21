@@ -250,6 +250,107 @@ class TestConfigSubcommands:
         assert result.exit_code == 1
 
 
+class TestDashboardCommand:
+    """Tests for the dashboard command."""
+
+    def test_help_shows_mode_and_target(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "--help"])
+        assert result.exit_code == 0
+        assert "web" in result.output
+        assert "code" in result.output
+        assert "api" in result.output
+        assert "TARGET" in result.output
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=True)
+    @patch("pyqualify.cli.main._build_container")
+    @patch("pyqualify.tui.app.DashboardApp")
+    def test_no_arguments_launches_dashboard(self, mock_app_cls, mock_build, mock_configured) -> None:
+        mock_app_instance = MagicMock()
+        mock_app_cls.return_value = mock_app_instance
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard"])
+        assert result.exit_code == 0
+        mock_app_instance.run.assert_called_once()
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=True)
+    @patch("pyqualify.cli.main._build_container")
+    @patch("pyqualify.tui.app.DashboardApp")
+    def test_valid_web_mode_with_url(self, mock_app_cls, mock_build, mock_configured) -> None:
+        mock_app_instance = MagicMock()
+        mock_app_cls.return_value = mock_app_instance
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "web", "https://example.com"])
+        assert result.exit_code == 0
+        mock_app_instance.run.assert_called_once()
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=True)
+    @patch("pyqualify.cli.main._build_container")
+    @patch("pyqualify.tui.app.DashboardApp")
+    def test_valid_code_mode_with_existing_path(self, mock_app_cls, mock_build, mock_configured) -> None:
+        mock_app_instance = MagicMock()
+        mock_app_cls.return_value = mock_app_instance
+        runner = CliRunner()
+        # Use the test file itself as a valid path
+        result = runner.invoke(cli, ["dashboard", "code", "pyproject.toml"])
+        assert result.exit_code == 0
+        mock_app_instance.run.assert_called_once()
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=True)
+    @patch("pyqualify.cli.main._build_container")
+    @patch("pyqualify.tui.app.DashboardApp")
+    def test_valid_api_mode_with_url(self, mock_app_cls, mock_build, mock_configured) -> None:
+        mock_app_instance = MagicMock()
+        mock_app_cls.return_value = mock_app_instance
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "api", "https://api.example.com"])
+        assert result.exit_code == 0
+        mock_app_instance.run.assert_called_once()
+
+    def test_invalid_mode_returns_error(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "invalid"])
+        assert result.exit_code != 0
+        assert "is not one of" in result.output or "Invalid value" in result.output
+
+    def test_web_mode_invalid_url_returns_error(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "web", "not-a-url"])
+        assert result.exit_code == 1
+        assert "✖" in result.output
+
+    def test_code_mode_nonexistent_path_returns_error(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "code", "/nonexistent/path/xyz"])
+        assert result.exit_code == 1
+        assert "✖" in result.output
+
+    def test_api_mode_invalid_url_returns_error(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "api", "ftp://invalid.com"])
+        assert result.exit_code == 1
+        assert "✖" in result.output
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=True)
+    @patch("pyqualify.cli.main._build_container")
+    @patch("pyqualify.tui.app.DashboardApp")
+    def test_mode_only_without_target_launches_dashboard(self, mock_app_cls, mock_build, mock_configured) -> None:
+        mock_app_instance = MagicMock()
+        mock_app_cls.return_value = mock_app_instance
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard", "web"])
+        assert result.exit_code == 0
+        mock_app_instance.run.assert_called_once()
+
+    @patch("pyqualify.cli.main.ConfigManager.is_configured", return_value=False)
+    def test_not_configured_exits_with_setup_message(self, mock_configured) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["dashboard"])
+        assert result.exit_code == 1
+        assert "not configured" in result.output
+        assert "pyqualify setup" in result.output
+
+
 class TestErrorHandling:
     """Tests for comprehensive error handling."""
 
