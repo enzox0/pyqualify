@@ -40,6 +40,12 @@ uv run pyqualify web https://example.com
 uv run pyqualify code ./src
 uv run pyqualify api https://api.example.com
 
+# TUI dashboard
+uv run pyqualify dashboard
+uv run pyqualify dashboard web https://example.com
+uv run pyqualify dashboard code ./src
+uv run pyqualify dashboard api https://api.example.com
+
 # With output options
 uv run pyqualify web https://example.com --pdf
 uv run pyqualify web https://example.com --json
@@ -193,6 +199,36 @@ def test_something(self, tmp_path):
             # ...
 ```
 
+### Testing the TUI
+
+Use Textual's built-in `App.run_test()` async context manager to drive the dashboard in headless mode:
+
+```python
+from pyqualify.tui.app import DashboardApp
+from pyqualify.container import Container
+
+async def test_dashboard_mounts() -> None:
+    container = Container()
+    # register minimal mocks...
+    app = DashboardApp(container=container)
+    async with app.run_test(size=(120, 40)) as pilot:
+        # assert widgets are present
+        assert app.query_one("#metrics-panel")
+        assert app.query_one("#issues-table")
+```
+
+The `size` parameter sets the virtual terminal dimensions. Use at least `(80, 24)` to pass the minimum-size check.
+
+To test keyboard shortcuts:
+
+```python
+async with app.run_test(size=(120, 40)) as pilot:
+    await pilot.press("2")          # focus Issues panel
+    await pilot.press("enter")      # open detail panel
+    await pilot.press("escape")     # close detail panel
+    await pilot.press("q")          # quit
+```
+
 ---
 
 ## Adding a New Analyzer
@@ -300,3 +336,5 @@ uv lock
 3. Commit and tag: `git tag v0.2.0`
 4. Build: `uv build`
 5. Publish: `uv publish` (requires PyPI credentials)
+
+> Both `pyproject.toml` and `pyqualify/__init__.py` must be kept in sync — the CLI uses `package_name="pyqualify"` for `--version`, which reads from the installed package metadata.

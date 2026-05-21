@@ -15,7 +15,7 @@ AI Engine (OpenAI / Anthropic / Google / Groq)
 Scoring Engine
     |
     v
-Report Generator (CLI / PDF)
+Report Generator (CLI / PDF)        TUI Dashboard (Textual)
 ```
 
 ---
@@ -28,7 +28,7 @@ Entry point for all user interaction. Built with [Click](https://click.palletspr
 
 | File | Responsibility |
 |------|---------------|
-| `main.py` | Command group, subcommands (`web`, `code`, `api`, `tools`, `config`), interactive menu, DI wiring |
+| `main.py` | Command group, subcommands (`web`, `code`, `api`, `dashboard`, `tools`, `config`), interactive menu, DI wiring |
 | `progress.py` | Thread-based spinner shown during analysis |
 | `validators.py` | URL, path, and filename validation for CLI arguments |
 
@@ -113,6 +113,43 @@ Pure function logic - no I/O, no external dependencies.
 
 `CLIFormatter` and `PDFReportGenerator` are registered in the DI container and used by all CLI commands. `HTMLDashboardGenerator` is available in the package but not wired into the CLI by default.
 
+### TUI Dashboard - `pyqualify/tui/`
+
+A full-screen interactive dashboard built with [Textual](https://textual.textualize.io/). Launched via `pyqualify dashboard`.
+
+```
+DashboardApp (App)
+  |-- DashboardScreen (Screen)
+  |     |-- HeaderPanel        - tool name, version, status indicators
+  |     |-- MetricsPanel       - live score, grade, risk level, issue counts
+  |     |-- IssuesTable        - scrollable table of discovered issues
+  |     |-- IssueDetailPanel   - full issue details (shown on Enter)
+  |     |-- LogPanel           - real-time log feed
+  |     `-- NavigationBar      - context-sensitive keyboard shortcut hints
+  |
+  `-- AnalysisRunner           - resolves analyzer, runs analysis, emits messages
+```
+
+**Message flow:**
+
+| Message | Emitted by | Consumed by |
+|---------|-----------|-------------|
+| `ProgressUpdate` | `AnalysisRunner` | `DashboardApp` → `HeaderPanel` |
+| `IssueDiscovered` | `AnalysisRunner` | `DashboardApp` → `IssuesTable`, `MetricsPanel` |
+| `LogEmitted` | `AnalysisRunner` + `_LogPanelHandler` | `DashboardApp` → `LogPanel` |
+| `AnalysisComplete` | `AnalysisRunner` | `DashboardApp` → `MetricsPanel`, `HeaderPanel` |
+| `AnalysisError` | `AnalysisRunner` | `DashboardApp` → `HeaderPanel`, `LogPanel` |
+
+**Key behaviours:**
+- Requires a terminal of at least **80×24** characters; exits with code 1 if too small
+- Auto-starts analysis when both `mode` and `target` are provided on launch
+- Stall detection: emits a warning if no progress for 30 seconds
+- Rendering error recovery: graceful shutdown after 3 consecutive render errors within 10 seconds
+- `Ctrl+C` exits with code 130 (standard SIGINT convention)
+- Python's `logging` module is bridged into the `LogPanel` via `_LogPanelHandler`
+
+See [TUI Dashboard](tui-dashboard.md) for usage details.
+
 ---
 
 ## Dependency Injection - `pyqualify/container.py`
@@ -165,6 +202,14 @@ Key types:
 | `LogConfig` | level, log_file |
 | `AnalysisContext` | mode, target, additional_context dict |
 
+TUI-specific models live in `pyqualify/tui/models.py`:
+
+| Type | Purpose |
+|------|---------|
+| `StatusState` | Component identifier, state, and label for HeaderPanel status indicators |
+| `LogEntry` | Timestamp, level, and message for a single LogPanel entry |
+| `ProgressState` | Phase name, percent, and stall flag for progress tracking |
+
 ---
 
 ## Utilities - `pyqualify/utils.py`
@@ -206,11 +251,15 @@ Log format: `YYYY-MM-DD HH:MM:SS [LEVEL] [pyqualify.module] message`
 
 Child loggers are created per module name (e.g. `pyqualify.web_analyzer`, `pyqualify.ai_engine`) so log output is filterable by component.
 
+When the TUI dashboard is active, a `_LogPanelHandler` is attached to the root `pyqualify` logger and routes all log records into the `LogPanel` widget in real time.
+
 ---
 
 ## Async I/O
 
 All network operations use `httpx.AsyncClient`. The CLI runs the async analysis coroutine with `asyncio.run()`. Analyzers use `asyncio.wait_for()` with per-operation timeouts to prevent hangs on slow targets.
+
+The TUI dashboard runs the analysis coroutine as an `asyncio.Task` managed by Textual's event loop, allowing the UI to remain responsive during analysis.
 
 ---
 
@@ -240,6 +289,7 @@ pyqualify/
         architecture.md
         configuration.md
         development.md
+        tui-dashboard.md
         web-analysis.md
         code-analysis.md
         api-analysis.md
@@ -279,6 +329,21 @@ pyqualify/
             editor.py
         logging/
             logger.py
+        tui/
+            app.py            DashboardApp (Textual App)
+            screens.py        DashboardScreen layout
+            runner.py         AnalysisRunner (progress events)
+            messages.py       Textual Message subclasses
+            models.py         TUI-specific dataclasses
+            dashboard.tcss    Textual CSS stylesheet
+            widgets/
+                header_panel.py
+                metrics_panel.py
+                issues_table.py
+                issue_detail_panel.py
+                log_panel.py
+                navigation_bar.py
+                help_modal.py
     tests/
         test_*.py             one file per module
 ```
