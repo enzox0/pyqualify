@@ -1,0 +1,417 @@
+/* PyQualify TUI Dashboard Theme - eDEX-UI dark aesthetic */
+/* Requirements: 9.1, 9.2, 9.3, 9.4, 9.5 */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design Tokens (Textual CSS variables)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+$accent: cyan;
+$surface: #0d0d0d;
+$panel-bg: #111111;
+$border-default: #555555;
+$border-focused: cyan;
+$text-primary: white;
+$text-muted: #666666;
+$success: green;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Screen - Primary dark background (Req 9.1)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+Screen {
+    background: $surface;
+    color: $text-primary;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CSS Grid Layout - Multi-panel arrangement (Req 1.1, 1.2)
+   Layout:
+     Row 1: HeaderPanel (full width)
+     Row 2: MetricsPanel (1fr) | IssuesTable (2fr)
+     Row 3: LogPanel (full width)
+     Row 4: NavigationBar (full width)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#dashboard-grid {
+    layout: grid;
+    grid-size: 3 4;
+    grid-columns: 1fr 1fr 1fr;
+    grid-rows: auto 1fr 1fr auto;
+    grid-gutter: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Panel Placement
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#header-panel {
+    column-span: 3;
+    row-span: 1;
+    height: auto;
+    max-height: 5;
+    padding: 0 1;
+}
+
+#metrics-panel {
+    column-span: 1;
+    row-span: 1;
+    min-width: 20;
+}
+
+#issues-table {
+    column-span: 2;
+    row-span: 1;
+    min-width: 20;
+}
+
+#issue-detail-panel {
+    column-span: 2;
+    row-span: 1;
+    min-width: 20;
+    display: none;
+}
+
+#issue-detail-panel.visible {
+    display: block;
+}
+
+#log-panel {
+    column-span: 3;
+    row-span: 1;
+    min-width: 20;
+}
+
+#navigation-bar {
+    column-span: 3;
+    row-span: 1;
+    height: auto;
+    max-height: 3;
+    padding: 0 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Panel Base Styles - Bright black borders (Req 9.3, 9.4)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.panel {
+    background: $panel-bg;
+    border: solid $border-default;
+    padding: 0 1;
+    overflow: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Focus States - Cyan border on focus, bright black unfocused (Req 9.5)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.panel:focus-within {
+    border: solid $border-focused;
+}
+
+.panel:focus {
+    border: solid $border-focused;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Severity Color Classes (Req 9.2)
+   Consistent with CLIFormatter.SEVERITY_COLORS:
+     critical = red
+     high     = bright red (#ff5555)
+     medium   = yellow
+     low      = blue
+     info     = bright black
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.severity-critical {
+    color: red;
+}
+
+.severity-high {
+    color: #ff5555;
+}
+
+.severity-medium {
+    color: yellow;
+}
+
+.severity-low {
+    color: blue;
+}
+
+.severity-info {
+    color: $text-muted;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Typography (Req 9.4)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bold white section headers */
+.section-header {
+    color: white;
+    text-style: bold;
+    padding: 0 0 1 0;
+}
+
+/* Bright black secondary labels and metadata */
+.label-secondary {
+    color: $text-muted;
+}
+
+/* Green success states (passing scores, completion indicators) */
+.success {
+    color: $success;
+}
+
+/* Cyan accent for recommendations, brand highlights, interactive prompts (Req 9.1) */
+.accent {
+    color: $accent;
+}
+
+.accent-bold {
+    color: $accent;
+    text-style: bold;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Score Color Classes (Metrics Panel)
+   green 90-100, yellow 70-89, orange 50-69, red 0-49
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.score-excellent {
+    color: green;
+    text-style: bold;
+}
+
+.score-good {
+    color: yellow;
+    text-style: bold;
+}
+
+.score-fair {
+    color: #ff8800;
+    text-style: bold;
+}
+
+.score-poor {
+    color: red;
+    text-style: bold;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Grade Color Classes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.grade-a {
+    color: green;
+    text-style: bold;
+}
+
+.grade-b {
+    color: cyan;
+    text-style: bold;
+}
+
+.grade-c {
+    color: yellow;
+    text-style: bold;
+}
+
+.grade-d {
+    color: #ff5555;
+    text-style: bold;
+}
+
+.grade-f {
+    color: red;
+    text-style: bold;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Log Level Colors (Log Panel)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.log-debug {
+    color: $text-muted;
+}
+
+.log-info {
+    color: white;
+}
+
+.log-warning {
+    color: yellow;
+}
+
+.log-error {
+    color: red;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Indicator Colors
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.status-ready {
+    color: green;
+}
+
+.status-setup-needed {
+    color: yellow;
+}
+
+.status-idle {
+    color: $text-muted;
+}
+
+.status-running {
+    color: cyan;
+}
+
+.status-complete {
+    color: green;
+}
+
+.status-error {
+    color: red;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Header Panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#header-panel {
+    background: $panel-bg;
+    border: none;
+    padding: 0 1;
+}
+
+#header-panel .title {
+    color: cyan;
+    text-style: bold;
+}
+
+#header-panel .version {
+    color: $text-muted;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Navigation Bar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#navigation-bar {
+    background: $panel-bg;
+    border: none;
+    padding: 0 1;
+}
+
+#navigation-bar .key {
+    color: cyan;
+    text-style: bold;
+}
+
+#navigation-bar .action {
+    color: $text-muted;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Issues Table - DataTable Styling
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#issues-table DataTable {
+    height: 100%;
+}
+
+#issues-table DataTable > .datatable--header {
+    color: white;
+    text-style: bold;
+    background: #1a1a1a;
+}
+
+#issues-table DataTable > .datatable--cursor {
+    background: #1a3a4a;
+    color: white;
+}
+
+#issues-table .empty-state {
+    color: $text-muted;
+    text-align: center;
+    padding: 2 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Help Modal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+HelpModal {
+    align: center middle;
+}
+
+HelpModal > #help-container {
+    background: $panel-bg;
+    border: solid $accent;
+    padding: 1 2;
+    width: 60;
+    max-height: 80%;
+}
+
+HelpModal .help-title {
+    color: cyan;
+    text-style: bold;
+    padding: 0 0 1 0;
+}
+
+HelpModal .help-section {
+    color: white;
+    text-style: bold;
+    padding: 1 0 0 0;
+}
+
+HelpModal .help-key {
+    color: cyan;
+}
+
+HelpModal .help-description {
+    color: $text-muted;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   New Messages Indicator (Log Panel)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.new-messages-indicator {
+    background: #1a1a1a;
+    color: cyan;
+    text-align: center;
+    text-style: bold;
+    dock: bottom;
+    height: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Progress Bar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.progress-bar {
+    height: 1;
+    padding: 0;
+}
+
+.progress-bar Bar > .bar--bar {
+    color: cyan;
+}
+
+.progress-bar Bar > .bar--complete {
+    color: green;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Highlight Effect - Applied on AnalysisComplete (Req 7.4)
+   Lasts 1-3 seconds to signal completion.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.highlight-complete {
+    border: solid green;
+    background: #0a1a0a;
+}
