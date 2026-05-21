@@ -1,5 +1,6 @@
 ﻿# PyQualify - AI-Powered QA & Security Analysis Tool
 
+
 <img width="1074" height="538" alt="banner" src="https://github.com/user-attachments/assets/735d5560-90d2-46c9-bdf7-f215e12110f7" />
 
 PyQualify is a command-line tool that performs automated quality assurance and security analysis across three modes: **Web**, **Code**, and **API**. It leverages LLM-based intelligence to classify findings, produce severity ratings, and generate actionable recommendations.
@@ -11,6 +12,7 @@ PyQualify is a command-line tool that performs automated quality assurance and s
 - **API Analysis** - Authentication enforcement, response integrity, schema conformance, injection vector testing, rate limiting verification, audit log manipulation, CAPTCHA bypass, HTTP request smuggling, case-sensitivity bypass, JSON hijacking, open redirect, server version disclosure, internal IP leakage, and application-level DoS
 - **AI-Powered Classification** - Findings are processed through an LLM for intelligent severity assignment, CWE/OWASP mapping, and contextual recommendations
 - **Scoring & Grading** - Numeric score (0-100), letter grade (A-F), and risk level for every analysis run
+- **TUI Dashboard** - Full-screen Textual dashboard with live metrics, scrollable issues table, real-time log feed, and issue detail panel (`pyqualify dashboard`)
 - **PDF Reports** - Professionally formatted PDF reports saved automatically to `~/Documents/PyQualify/`
 - **Tool Filtering** - Enable or disable individual checks per run with `--only` and `--disable`
 - **Color-Coded CLI Output** - Severity-based coloring with graceful fallback for terminals without color support
@@ -25,6 +27,7 @@ PyQualify is a command-line tool that performs automated quality assurance and s
   - **Anthropic** - Claude 3.5 Sonnet, Claude 3 Opus, ... (`uv add anthropic` required)
   - **Google** - Gemini 2.0 Flash, Gemini 1.5 Pro, ...
   - **Groq** - Llama 3.3 70B, Mixtral 8x7B, ... (free API keys available at [console.groq.com/keys](https://console.groq.com/keys))
+- For the TUI dashboard: a terminal of at least **80×24** characters
 
 ## Installation
 
@@ -117,6 +120,46 @@ uv run pyqualify code ./src --pdf
 uv run pyqualify api https://api.example.com --json
 ```
 
+## TUI Dashboard
+
+The `dashboard` command launches a full-screen Textual interface with live updates as analysis runs.
+
+```bash
+# Open the dashboard in idle state
+pyqualify dashboard
+
+# Auto-start analysis on launch
+pyqualify dashboard web https://example.com
+pyqualify dashboard code ./src
+pyqualify dashboard api https://api.example.com
+```
+
+The dashboard requires a terminal of at least **80×24** characters. It exits with a non-zero code if the terminal is too small.
+
+### Panels
+
+| Panel | Description |
+|-------|-------------|
+| Header | Tool name, version, and three status indicators (AI engine, analyzer, analysis state) |
+| Metrics | Live score, grade, risk level, and per-severity issue counts |
+| Issues | Scrollable table of discovered issues, sorted by severity |
+| Issue Detail | Full issue details shown when pressing Enter on a row |
+| Log | Real-time log feed from the analysis engine |
+| Navigation | Context-sensitive keyboard shortcut hints |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `Ctrl+C` | Force quit (exit code 130) |
+| `?` | Show help overlay |
+| `1` | Focus Metrics panel |
+| `2` | Focus Issues panel |
+| `3` | Focus Log panel |
+| `Enter` | Show issue detail (when Issues panel is focused) |
+| `Escape` | Close issue detail panel |
+
 ## Configuration
 
 PyQualify uses a layered configuration system with the following precedence (highest wins):
@@ -174,6 +217,7 @@ retry_delay = 2.0
 | `pyqualify web <url>` | Analyze a web page |
 | `pyqualify code <path>` | Analyze source code (file or directory) |
 | `pyqualify api <base_url>` | Analyze API endpoints |
+| `pyqualify dashboard [mode] [target]` | Launch the TUI dashboard |
 | `pyqualify tools [category]` | List available tools for a category |
 | `pyqualify config set <key> <value>` | Set a configuration value |
 | `pyqualify config list` | List all configuration |
@@ -342,6 +386,7 @@ PyQualify follows a layered pipeline architecture:
 
 ```
 CLI Layer -> Analysis Engine -> AI Engine -> Scoring -> Report Generator
+                                                     -> TUI Dashboard
 ```
 
 Key design decisions:
@@ -350,6 +395,7 @@ Key design decisions:
 - **Protocol-based interfaces** - All major components implement Python protocols
 - **Async I/O** - `httpx.AsyncClient` for all network operations
 - **Modular analyzers** - Each analysis mode is an independent module with individually toggleable tools
+- **Textual TUI** - Full-screen dashboard built with [Textual](https://textual.textualize.io/) for live analysis monitoring
 
 ## Development
 
@@ -394,6 +440,7 @@ pyqualify/
         scoring/
         config/
         logging/
+        tui/
     tests/
     docs/
 ```
@@ -406,6 +453,7 @@ pyqualify/
 - `openai` - LLM integration (also used for Google Gemini and Groq via compatible API)
 - `jinja2` - HTML template rendering
 - `reportlab` - PDF report generation
+- `textual` - TUI dashboard framework
 
 ## License
 
