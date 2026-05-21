@@ -26,7 +26,7 @@ from pyqualify.cli.validators import validate_path, validate_url
 from pyqualify.config.manager import ConfigManager
 from pyqualify.container import Container
 from pyqualify.logging.logger import PyqualifyLogger
-from pyqualify.models import AIConfig, AnalysisConfig, LogConfig
+from pyqualify.models import AIConfig, AnalysisConfig, AnalysisMode, LogConfig
 from pyqualify.reporting.cli_formatter import CLIFormatter
 from pyqualify.reporting.html_generator import HTMLDashboardGenerator
 from pyqualify.reporting.pdf_generator import PDFReportGenerator, resolve_pdf_path
@@ -721,6 +721,76 @@ def list_tools_cmd(category: str | None) -> None:
     click.echo(click.style("    pyqualify code <path> --disable test-gaps,quality", fg="bright_black"))
     click.echo(click.style("    pyqualify web <url> --only security-headers", fg="bright_black"))
     click.echo()
+
+
+@cli.command("dashboard")
+@click.argument("mode", required=False, type=click.Choice(["web", "code", "api"]))
+@click.argument("target", required=False)
+def dashboard(mode: str | None, target: str | None) -> None:
+    """Launch the TUI dashboard for interactive analysis.
+
+    Optionally provide a MODE (web, code, or api) and a TARGET (URL or path)
+    to auto-start analysis on launch.
+
+    \b
+    Examples:
+      pyqualify dashboard
+      pyqualify dashboard web https://example.com
+      pyqualify dashboard code ./src
+      pyqualify dashboard api https://api.example.com
+    """
+    # Validate: if target is provided, mode must also be provided
+    if target and not mode:
+        click.echo(
+            "  " + click.style(
+                "✖ Target provided without a mode. Please specify a mode (web, code, or api).",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
+    # Validate target based on mode
+    if mode and target:
+        try:
+            if mode in ("web", "api"):
+                validate_url(target)
+            elif mode == "code":
+                validate_path(target)
+        except click.BadParameter as e:
+            click.echo(
+                "  " + click.style(f"✖ {e.format_message()}", fg="red"),
+                err=True,
+            )
+            sys.exit(1)
+
+    # Create container and check configuration status
+    container = Container()
+    config_manager = ConfigManager()
+    container.register_singleton(ConfigManager, lambda: config_manager)
+
+    if not config_manager.is_configured():
+        click.echo(
+            "\n  " + click.style("⚠ PyQualify is not configured.", fg="yellow")
+        )
+        click.echo(
+            "  Run " + click.style("pyqualify setup", fg="cyan", bold=True)
+            + " to configure your provider and API key.\n"
+        )
+        sys.exit(1)
+
+    # Build fully wired container and launch TUI
+    container = _build_container(config_manager)
+
+    # Convert mode string to AnalysisMode enum if provided
+    analysis_mode: AnalysisMode | None = None
+    if mode:
+        analysis_mode = AnalysisMode(mode)
+
+    from pyqualify.tui.app import DashboardApp
+
+    app = DashboardApp(container=container, mode=analysis_mode, target=target)
+    app.run()
 
 
 @cli.group()
