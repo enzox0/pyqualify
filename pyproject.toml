@@ -37,6 +37,9 @@ pyqualify = "pyqualify.cli.main:cli"
 [tool.setuptools.packages.find]
 include = ["pyqualify*"]
 
+[tool.setuptools.package-data]
+pyqualify = ["**/*.tcss", "**/templates/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
