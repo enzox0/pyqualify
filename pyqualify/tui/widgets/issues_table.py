@@ -77,6 +77,8 @@ class IssuesTable(Widget):
     }
     """
 
+    BORDER_TITLE = "Issues"
+
     # Reactive to track whether the table has issues
     _has_issues: reactive[bool] = reactive(False)
 

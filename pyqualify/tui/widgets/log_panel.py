@@ -95,6 +95,8 @@ class LogPanel(Widget):
     }
     """
 
+    BORDER_TITLE = "Log"
+
     # Reactive property tracking unseen message count
     _unseen_count: reactive[int] = reactive(0)
     _auto_scroll: reactive[bool] = reactive(True)

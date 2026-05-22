@@ -89,6 +89,8 @@ class MetricsPanel(Widget):
     }
     """
 
+    BORDER_TITLE = "Metrics"
+
     # Reactive properties for live updates
     score: reactive[int] = reactive(0)
     grade: reactive[str] = reactive("-")

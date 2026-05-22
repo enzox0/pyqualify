@@ -41,6 +41,8 @@ class IssueDetailPanel(Widget):
         width: 100%;
         height: 100%;
         border: solid $secondary;
+        border-title-color: $accent;
+        border-title-align: right;
         padding: 1 2;
     }
 
@@ -103,6 +105,8 @@ class IssueDetailPanel(Widget):
         color: $text-muted;
     }
     """
+
+    BORDER_TITLE = "Details"
 
     def __init__(
         self,
