@@ -15,7 +15,7 @@ from textual.widgets import Static
 from pyqualify.tui.models import StatusState
 
 # Version displayed in the header
-VERSION = "0.3.0"
+VERSION = "1.0.0a1"
 
 # Status state to symbol/color mapping (Req 2.2-2.9)
 STATUS_SYMBOLS: dict[str, tuple[str, str]] = {
