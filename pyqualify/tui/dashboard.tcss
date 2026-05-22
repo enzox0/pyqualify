@@ -98,6 +98,8 @@ Screen {
 .panel {
     background: $panel-bg;
     border: solid $border-default;
+    border-title-color: $accent;
+    border-title-align: right;
     padding: 0 1;
     overflow: auto;
 }
