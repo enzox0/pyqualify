@@ -27,7 +27,7 @@ from pyqualify.tui.messages import (
     LogEmitted,
     ProgressUpdate,
 )
-from pyqualify.tui.screens import DashboardScreen
+from pyqualify.tui.screens import DashboardScreen, ToolSelectionScreen
 from pyqualify.tui.widgets import NavigationBar
 from pyqualify.tui.widgets.header_panel import HeaderPanel
 from pyqualify.tui.widgets.issues_table import IssuesTable
@@ -161,6 +161,18 @@ class DashboardApp(App[None]):
 
         self.push_screen(DashboardScreen())
 
+        # ─── Show tool selection when no mode/target provided (Req 8.5) ──────
+        if self._mode is None or self._target is None:
+            async def _on_selection(result: tuple | None) -> None:
+                if result is None:
+                    return
+                mode, target = result
+                self._mode = mode
+                self._target = target
+                await self._start_analysis_after_selection()
+
+            await self.push_screen(ToolSelectionScreen(), callback=_on_selection)
+
         # ─── Resolve dependencies from DI container ──────────────────────────
         from pyqualify.ai.engine import AIEngine
         from pyqualify.analyzers.api_analyzer import APIAnalyzer
@@ -246,6 +258,55 @@ class DashboardApp(App[None]):
             except Exception:
                 pass
 
+            self._runner_task = asyncio.create_task(
+                self._runner.run(self._mode, self._target)
+            )
+
+    async def _start_analysis_after_selection(self) -> None:
+        """Begin analysis after the user picks a mode and target from the
+        ToolSelectionScreen.  Updates the header status and kicks off the
+        AnalysisRunner task.
+        """
+        if self._mode is None or self._target is None:
+            return
+
+        # Update AI Engine and Analyzer status indicators now that mode is known
+        try:
+            from pyqualify.analyzers.api_analyzer import APIAnalyzer
+            from pyqualify.analyzers.code_analyzer import CodeAnalyzer
+            from pyqualify.analyzers.web_analyzer import WebAnalyzer
+            from pyqualify.config.manager import ConfigManager
+            from pyqualify.ai.engine import AIEngine
+
+            header = self.screen.query_one("#header-panel", HeaderPanel)
+
+            config_manager = self._container.resolve(ConfigManager)
+            ai_engine = None
+            try:
+                ai_engine = self._container.resolve(AIEngine)
+            except Exception:
+                pass
+
+            if config_manager.is_configured() and ai_engine is not None:
+                header.update_status("ai_engine", "ready", "ready")
+            else:
+                header.update_status("ai_engine", "setup_needed", "setup needed")
+
+            # Check if the selected analyzer is available
+            analyzer_map = {"web": WebAnalyzer, "code": CodeAnalyzer, "api": APIAnalyzer}
+            analyzer_cls = analyzer_map.get(self._mode.value)
+            try:
+                if analyzer_cls:
+                    self._container.resolve(analyzer_cls)
+                header.update_status("analyzer", "ready", f"{self._mode.value} analyzer")
+            except Exception:
+                header.update_status("analyzer", "setup_needed", "no analyzer")
+
+            header.update_status("analysis", "running", "analyzing")
+        except Exception:
+            pass
+
+        if self._runner is not None:
             self._runner_task = asyncio.create_task(
                 self._runner.run(self._mode, self._target)
             )
