@@ -333,7 +333,7 @@ uv lock
 
 1. Bump `version` in `pyproject.toml`
 2. Update `__version__` in `pyqualify/__init__.py`
-3. Commit and tag: `git tag v0.2.0`
+3. Commit and tag: `git tag v1.0.0a1`
 4. Build: `uv build`
 5. Publish: `uv publish` (requires PyPI credentials)
 
