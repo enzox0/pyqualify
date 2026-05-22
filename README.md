@@ -1,7 +1,6 @@
 ﻿# PyQualify - AI-Powered QA & Security Analysis Tool
 
-
-<img width="1074" height="538" alt="banner" src="https://github.com/user-attachments/assets/735d5560-90d2-46c9-bdf7-f215e12110f7" />
+<img width="1440" height="852" alt="TUI" src="https://github.com/user-attachments/assets/91144a5f-27df-4011-9724-de93a9625475" />
 
 PyQualify is a command-line tool that performs automated quality assurance and security analysis across three modes: **Web**, **Code**, and **API**. It leverages LLM-based intelligence to classify findings, produce severity ratings, and generate actionable recommendations.
 
