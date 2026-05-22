@@ -8,12 +8,15 @@ Escape key to hide the detail panel.
 Also implements ToolSelectionScreen, a modal that lets the user pick an
 analysis mode and enter a target before the dashboard is shown.
 
+Also implements InterfaceSelectionScreen, a modal that lets the user
+choose between CLI and TUI (Dashboard) interface modes on launch.
+
 Requirements: 1.1, 1.2, 1.3, 1.4
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.events import Key, Resize
@@ -40,6 +43,204 @@ MIN_PANEL_WIDTH: int = 20
 
 
 # ---------------------------------------------------------------------------
+# Interface Selection Screen (CLI vs TUI)
+# ---------------------------------------------------------------------------
+
+
+class InterfaceSelectionScreen(ModalScreen[str]):
+    """Modal screen that lets the user choose between CLI and TUI interface.
+
+    Dismissed with "cli" or "tui" string when the user confirms,
+    or exits the app when Escape / q is pressed.
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Quit", show=True),
+        Binding("q", "cancel", "Quit", show=False),
+        Binding("1", "select_cli", "CLI", show=False, priority=True),
+        Binding("2", "select_tui", "TUI", show=False, priority=True),
+        Binding("up", "prev_option", "Prev", show=False, priority=True),
+        Binding("down", "next_option", "Next", show=False, priority=True),
+        Binding("enter", "confirm", "Confirm", show=False, priority=True),
+    ]
+
+    DEFAULT_CSS = """
+    InterfaceSelectionScreen {
+        align: center middle;
+        background: #0d0d0d;
+    }
+
+    #interface-container {
+        background: #111111;
+        border: solid cyan;
+        padding: 1 2;
+        width: 55%;
+        min-width: 52;
+        max-width: 72;
+        height: auto;
+    }
+
+    #interface-title {
+        color: cyan;
+        text-style: bold;
+        text-align: center;
+        height: 1;
+    }
+
+    #interface-subtitle {
+        color: #555555;
+        text-align: center;
+        height: 1;
+        margin: 0 0 1 0;
+    }
+
+    .interface-btn {
+        width: 100%;
+        height: 1;
+        background: #1a1a1a;
+        color: #888888;
+        padding: 0 1;
+    }
+
+    .interface-btn:hover {
+        background: #0a2030;
+        color: cyan;
+    }
+
+    .interface-btn.-active {
+        background: #0a2030;
+        color: cyan;
+    }
+
+    #interface-hint {
+        color: #333333;
+        text-align: center;
+        height: 1;
+        margin: 1 0 0 0;
+    }
+    """
+
+    _INTERFACE_OPTIONS: list[tuple[str, str, str]] = [
+        ("cli", "1  CLI",       "Classic terminal output with progress indicators"),
+        ("tui", "2  Dashboard", "Interactive TUI with live panels and real-time updates"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._selected: str = "cli"
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="interface-container"):
+            yield Static("PyQualify", id="interface-title")
+            yield Static("Choose your interface", id="interface-subtitle")
+
+            for key, label, desc in self._INTERFACE_OPTIONS:
+                active = " -active" if key == self._selected else ""
+                yield Static(
+                    f"  {label}  —  {desc}",
+                    id=f"iface-btn-{key}",
+                    classes=f"interface-btn{active}",
+                )
+
+            yield Static("1/2 select  •  Enter confirm  •  Esc quit", id="interface-hint")
+
+    def _set_option(self, option: str) -> None:
+        """Switch the active option and update button styles."""
+        self._selected = option
+        for key, _, _ in self._INTERFACE_OPTIONS:
+            btn = self.query_one(f"#iface-btn-{key}", Static)
+            if key == option:
+                btn.add_class("-active")
+            else:
+                btn.remove_class("-active")
+
+    def action_select_cli(self) -> None:
+        self._set_option("cli")
+
+    def action_select_tui(self) -> None:
+        self._set_option("tui")
+
+    def action_prev_option(self) -> None:
+        options = [opt[0] for opt in self._INTERFACE_OPTIONS]
+        idx = options.index(self._selected)
+        self._set_option(options[(idx - 1) % len(options)])
+
+    def action_next_option(self) -> None:
+        options = [opt[0] for opt in self._INTERFACE_OPTIONS]
+        idx = options.index(self._selected)
+        self._set_option(options[(idx + 1) % len(options)])
+
+    def action_confirm(self) -> None:
+        self.dismiss(self._selected)
+
+    def action_cancel(self) -> None:
+        self.app.exit(return_code=0)
+
+    def on_key(self, event: Key) -> None:
+        """Handle keys at screen level."""
+        if event.key == "1":
+            event.stop()
+            event.prevent_default()
+            self.action_select_cli()
+        elif event.key == "2":
+            event.stop()
+            event.prevent_default()
+            self.action_select_tui()
+        elif event.key == "up":
+            event.stop()
+            event.prevent_default()
+            self.action_prev_option()
+        elif event.key == "down":
+            event.stop()
+            event.prevent_default()
+            self.action_next_option()
+        elif event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.action_confirm()
+
+    def on_static_click(self, event: Static.Clicked) -> None:
+        """Handle clicks on the option rows."""
+        widget_id = event.widget.id
+        if widget_id == "iface-btn-cli":
+            self._set_option("cli")
+            self.dismiss("cli")
+        elif widget_id == "iface-btn-tui":
+            self._set_option("tui")
+            self.dismiss("tui")
+
+
+class InterfaceSelectorApp(App[str]):
+    """Minimal Textual app that shows the interface selection screen.
+
+    Returns "cli" or "tui" as the app result, which the CLI entry point
+    uses to decide which flow to launch.
+    """
+
+    CSS = """
+    Screen {
+        background: #0d0d0d;
+    }
+    """
+
+    ENABLE_COMMAND_PALETTE = False
+
+    def on_mount(self) -> None:
+        """Push the interface selection screen on mount."""
+        self.push_screen(
+            InterfaceSelectionScreen(),
+            callback=self._on_selection,
+        )
+
+    def _on_selection(self, result: str | None) -> None:
+        """Handle the selection result."""
+        if result is None:
+            self.exit(return_code=0)
+        else:
+            self.exit(result=result)
+
+
+# ---------------------------------------------------------------------------
 # Tool Selection Screen
 # ---------------------------------------------------------------------------
 
@@ -62,16 +263,123 @@ _TARGET_LABELS: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Path Auto-Suggestion
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path
+from textual.suggester import Suggester as _Suggester
+
+
+class PathSuggester(_Suggester):
+    """Provides filesystem path auto-suggestions based on user input.
+
+    As the user types a path, this suggester lists matching files and
+    directories in the current or specified parent directory and returns
+    the best match as a completion suggestion (ghost text).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(use_cache=False, case_sensitive=False)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        """Get a path completion suggestion for the current input value.
+
+        Args:
+            value: The current text in the input field.
+
+        Returns:
+            A full path suggestion string, or None if no match found.
+        """
+        if not value:
+            return None
+
+        try:
+            input_path = _Path(value)
+
+            # Determine the directory to search and the prefix to match
+            if value.endswith("/") or value.endswith("\\"):
+                # User typed a directory separator - list contents of that dir
+                search_dir = input_path
+                prefix = ""
+            else:
+                # User is typing a name - search in the parent directory
+                search_dir = input_path.parent
+                prefix = input_path.name.lower()
+
+            # Resolve relative to cwd
+            resolved_dir = search_dir
+            if not resolved_dir.is_absolute():
+                resolved_dir = _Path.cwd() / resolved_dir
+
+            if not resolved_dir.is_dir():
+                return None
+
+            # List directory contents and find matches
+            matches: list[str] = []
+            try:
+                for entry in sorted(resolved_dir.iterdir()):
+                    name = entry.name
+                    # Skip hidden files/dirs
+                    if name.startswith("."):
+                        continue
+                    if prefix and not name.lower().startswith(prefix):
+                        continue
+                    matches.append(name)
+            except PermissionError:
+                return None
+
+            if not matches:
+                return None
+
+            # Return the first match as a full path suggestion
+            best_match = matches[0]
+
+            # Build the suggestion preserving the user's path prefix
+            if value.endswith("/") or value.endswith("\\"):
+                suggestion = value + best_match
+            else:
+                # Determine the separator used in the input
+                if "/" in value:
+                    sep = "/"
+                elif "\\" in value:
+                    sep = "\\"
+                else:
+                    sep = "/"
+
+                # Get the parent portion as the user typed it
+                parent_part = value[:len(value) - len(input_path.name)]
+                suggestion = parent_part + best_match
+
+            # Add trailing separator if it's a directory
+            suggested_full = resolved_dir / best_match
+            if suggested_full.is_dir() and not suggestion.endswith(("/", "\\")):
+                sep = "/"
+                if "\\" in value:
+                    sep = "\\"
+                suggestion += sep
+
+            return suggestion
+
+        except (OSError, ValueError):
+            return None
+
+
 class _ModeAwareInput(Input):
     """Input subclass that intercepts 1/2/3 and up/down keys.
 
     When the input is empty (user hasn't started typing a URL), these
     keys trigger mode selection. Once the user has typed content, only
     up/down are intercepted (1/2/3 are allowed as normal text for URLs).
+
+    Supports a PathSuggester for filesystem auto-completion in code mode.
+    The suggestion appears as ghost text and can be accepted with Tab or
+    the right arrow key.
     """
 
     def _on_key(self, event: Key) -> None:
         screen = self.screen
+        # Tab accepts the suggestion (handled by Input natively)
         # Always intercept up/down for mode navigation
         if event.key in ("up", "down"):
             event.stop()
@@ -225,8 +533,11 @@ class ToolSelectionScreen(ModalScreen[tuple[AnalysisMode, str]]):
                 )
 
             yield Static(_TARGET_LABELS[self._selected_mode], id="target-label")
+            # Use PathSuggester for code mode, None for URL modes
+            suggester = PathSuggester() if self._selected_mode == "code" else None
             yield _ModeAwareInput(
                 placeholder=_TARGET_HINTS[self._selected_mode],
+                suggester=suggester,
                 id="target-input",
             )
             yield Static("", id="error-label")
@@ -252,6 +563,8 @@ class ToolSelectionScreen(ModalScreen[tuple[AnalysisMode, str]]):
         inp = self.query_one("#target-input", _ModeAwareInput)
         inp.placeholder = _TARGET_HINTS[mode]
         inp.value = ""
+        # Swap suggester: PathSuggester for code mode, None for URL modes
+        inp.suggester = PathSuggester() if mode == "code" else None
         inp.focus()
 
         self._clear_error()

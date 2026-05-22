@@ -254,6 +254,40 @@ def _prompt_output_options() -> tuple[bool, bool]:
     return save_pdf, False
 
 
+def _run_interface_selector() -> None:
+    """Show a TUI-based interface selector (CLI vs Dashboard), then dispatch."""
+    from pyqualify.tui.screens import InterfaceSelectorApp
+
+    app = InterfaceSelectorApp()
+    result = app.run()
+
+    if result == "tui":
+        # Launch the full TUI dashboard flow
+        config_manager = ConfigManager()
+        if not config_manager.is_configured():
+            click.echo(
+                "\n  " + click.style("⚠ PyQualify is not configured.", fg="yellow")
+            )
+            click.echo(
+                "  Run " + click.style("pyqualify setup", fg="cyan", bold=True)
+                + " to configure your provider and API key.\n"
+            )
+            sys.exit(1)
+
+        container = _build_container(config_manager)
+
+        from pyqualify.tui.app import DashboardApp
+
+        dashboard_app = DashboardApp(container=container, mode=None, target=None)
+        dashboard_app.run()
+    elif result == "cli":
+        # Fall through to the classic CLI interactive flow
+        _run_interactive()
+    else:
+        # User quit (Escape/q) - exit cleanly
+        sys.exit(0)
+
+
 def _run_interactive() -> None:
     """Full interactive session: config check -> banner -> mode -> target -> options -> analysis."""
     config_manager = ConfigManager()
@@ -442,7 +476,7 @@ def cli(ctx: click.Context) -> None:
     """
     ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
-        _run_interactive()
+        _run_interface_selector()
 
 
 @cli.command()
