@@ -17,6 +17,7 @@ PyQualify is a command-line tool that performs automated quality assurance and s
 - **Color-Coded CLI Output** - Severity-based coloring with graceful fallback for terminals without color support
 - **Hierarchical Configuration** - TOML config file, environment variables, and CLI arguments with clear precedence
 - **Interactive Config Editor** - Nano-like terminal editor for managing configuration
+- **Docker Support** - Official Docker image available on Docker Hub with automatic report saving to host Documents folder
 
 ## Requirements
 
@@ -53,6 +54,16 @@ uv sync
 
 # Optional: add Anthropic SDK for Claude models
 uv add anthropic
+```
+
+### Via Docker
+
+```bash
+# Pull the latest image
+docker pull enzox0/pyqualify:latest
+
+# Or build locally
+docker build -t enzox0/pyqualify:latest .
 ```
 
 ## First Run - Setup
@@ -193,6 +204,47 @@ export PYQUALIFY_MODEL=gpt-4o
 export PYQUALIFY_TIMEOUT=60
 export PYQUALIFY_RATE_LIMIT_BURST=50
 export PYQUALIFY_RATE_LIMIT_WINDOW=10
+
+# Docker-specific
+export PYQUALIFY_CONFIG_DIR=/app/config   # Path to config directory
+export PYQUALIFY_REPORT_DIR=/app/reports  # Path to save reports
+```
+
+## Docker Usage
+
+### First Run - Setup
+
+Configure your AI provider (one-time setup):
+
+```bash
+# Windows (PowerShell)
+docker run -v ${env:USERPROFILE}\.pyqualify:/app/config -it enzox0/pyqualify:latest setup
+
+# Linux/macOS
+docker run -v ~/.pyqualify:/app/config -it enzox0/pyqualify:latest setup
+```
+
+### Run Analysis
+
+Run an analysis with PDF report saved to your Documents folder:
+
+```bash
+# Windows (PowerShell)
+docker run -v ${env:USERPROFILE}\.pyqualify:/app/config -v ${env:USERPROFILE}\Documents\PyQualify:/app/reports -it enzox0/pyqualify:latest web https://example.com --pdf
+
+# Linux/macOS
+docker run -v ~/.pyqualify:/app/config -v ~/Documents/PyQualify:/app/reports -it enzox0/pyqualify:latest web https://example.com --pdf
+```
+
+### Using Docker Compose
+
+```bash
+# Build (if needed) and run setup
+docker-compose build
+docker-compose run --rm pyqualify setup
+
+# Run analysis
+docker-compose run --rm pyqualify web https://example.com --pdf
 ```
 
 ### Configuration File

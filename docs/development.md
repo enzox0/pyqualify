@@ -331,6 +331,8 @@ uv lock
 
 ## Releasing
 
+### PyPI Release
+
 1. Bump `version` in `pyproject.toml`
 2. Update `__version__` in `pyqualify/__init__.py`
 3. Commit and tag: `git tag v1.0.0a1`
@@ -338,3 +340,15 @@ uv lock
 5. Publish: `uv publish` (requires PyPI credentials)
 
 > Both `pyproject.toml` and `pyqualify/__init__.py` must be kept in sync — the CLI uses `package_name="pyqualify"` for `--version`, which reads from the installed package metadata.
+
+### Docker Hub Release
+
+The Docker image is automatically built and pushed to Docker Hub when:
+- A tag starting with `v` is pushed
+- A release is published on GitHub
+- The workflow is manually triggered from the "Actions" tab
+
+To set up automatic Docker Hub publishing:
+1. Create a Docker Hub access token at https://hub.docker.com/settings/security
+2. Add `DOCKER_HUB_USERNAME` and `DOCKER_HUB_TOKEN` secrets to your GitHub repository
+3. Push a tag or create a release to trigger the workflow
