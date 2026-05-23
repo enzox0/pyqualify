@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  pyqualify:
+    build: .
+    image: enzox0/pyqualify:latest
+    volumes:
+      # Mount config directory from host
+      - ${USERPROFILE:-~}/.pyqualify:/app/config
+      # Mount reports directory to host's Documents/PyQualify
+      - ${USERPROFILE:-~}/Documents/PyQualify:/app/reports
+    environment:
+      - PYQUALIFY_CONFIG_DIR=/app/config
+      - PYQUALIFY_REPORT_DIR=/app/reports

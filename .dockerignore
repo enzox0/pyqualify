@@ -1,0 +1,9 @@
+.git
+.gitignore
+.github
+.githooks
+docs
+tests
+*.md
+!README.md
+setup-githooks.bat
