@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -75,7 +76,11 @@ MARGIN = 18 * mm
 
 def resolve_pdf_path(target: str) -> Path:
     """Build the output path: ~/Documents/PyQualify/<slug>/<timestamp>.pdf."""
-    docs = Path.home() / "Documents" / "PyQualify"
+    report_dir = os.environ.get("PYQUALIFY_REPORT_DIR")
+    if report_dir:
+        docs = Path(report_dir)
+    else:
+        docs = Path.home() / "Documents" / "PyQualify"
 
     # Derive a filesystem-safe slug from the target
     try:

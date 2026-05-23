@@ -17,9 +17,20 @@ class ConfigManager:
     3. CLI arguments (passed at runtime)
     """
 
-    CONFIG_DIR: Path = Path.home() / ".pyqualify"
-    CONFIG_FILE: Path = CONFIG_DIR / "config.toml"
-    ENV_FILE: Path = CONFIG_DIR / "env"
+    @property
+    def CONFIG_DIR(self) -> Path:
+        config_dir = os.environ.get("PYQUALIFY_CONFIG_DIR")
+        if config_dir:
+            return Path(config_dir)
+        return Path.home() / ".pyqualify"
+
+    @property
+    def CONFIG_FILE(self) -> Path:
+        return self.CONFIG_DIR / "config.toml"
+
+    @property
+    def ENV_FILE(self) -> Path:
+        return self.CONFIG_DIR / "env"
 
     SENSITIVE_PATTERNS: list[str] = ["API_KEY", "SECRET", "TOKEN", "PASSWORD"]
 
