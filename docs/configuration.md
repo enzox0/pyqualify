@@ -59,8 +59,19 @@ All `PYQUALIFY_`-prefixed variables are recognized. The prefix is stripped and t
 | `PYQUALIFY_RATE_LIMIT_BURST`  | Requests in the API rate limit test  | `50`             |
 | `PYQUALIFY_RATE_LIMIT_WINDOW` | Duration of the burst window (s)     | `10`             |
 | `PYQUALIFY_EXTRA_EXTENSIONS`  | Extra file extensions for code scan  | -                |
+| `PYQUALIFY_CONFIG_DIR`         | Custom path to config directory       | `~/.pyqualify`   |
+| `PYQUALIFY_REPORT_DIR`         | Custom path to save reports           | `~/Documents/PyQualify` |
 
 Copy `.env.example` to `.env` to use environment variables locally.
+
+## Docker-Specific Configuration
+
+When using PyQualify via Docker, these environment variables are used to map volumes from your host machine to the container:
+
+- `PYQUALIFY_CONFIG_DIR=/app/config`: Maps to your host's `~/.pyqualify` directory
+- `PYQUALIFY_REPORT_DIR=/app/reports`: Maps to your host's `~/Documents/PyQualify` directory
+
+These are already pre-configured in the `Dockerfile` and `docker-compose.yml`.
 
 ## Managing Config via CLI
 
